@@ -8,9 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @getly/sdk --if-present && npm run build --workspaces --if-present",
+    "test": "npm run build -w @getly/sdk && npm run test --workspaces --if-present",
+    "typecheck": "npm run build -w @getly/sdk && npm run typecheck --workspaces --if-present",
     "generate:llms": "node scripts/generate-llms-txt.mjs"
   },
   "repository": {
