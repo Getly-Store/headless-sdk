@@ -1,0 +1,25 @@
+# Smithery hosting config for @getly/mcp — https://smithery.ai
+# The Getly API key is provided via config and mapped to the GETLY_API_KEY
+# environment variable (the ONLY place the server reads it from).
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - getlyApiKey
+    properties:
+      getlyApiKey:
+        type: string
+        title: Getly API key
+        description: >-
+          Getly API key (starts with getly_sk_live_). Create one at
+          https://www.getly.store/dashboard/developer/keys and grant only the
+          scopes your workflow needs.
+  commandFunction: |-
+    (config) => ({
+      command: 'node',
+      args: ['packages/mcp/dist/cli.js'],
+      env: { GETLY_API_KEY: config.getlyApiKey }
+    })
+build:
+  dockerBuildPath: .

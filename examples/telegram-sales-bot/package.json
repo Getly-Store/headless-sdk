@@ -1,0 +1,20 @@
+{
+  "name": "getly-example-telegram-sales-bot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sell Getly products inside a Telegram chat — grammY bot with checkout links and webhook-free payment polling",
+  "license": "MIT",
+  "type": "module",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "check": "node --check bot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@getly/sdk": "0.1.0",
+    "grammy": "^1.30.0"
+  }
+}

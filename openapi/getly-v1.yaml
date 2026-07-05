@@ -1,0 +1,2984 @@
+# Getly v1 API — OpenAPI 3.1 specification.
+# Single source of truth for the SDK method names (operationId), the MCP tool
+# names, the /developers/api reference and the generated llms.txt.
+# Mirrored to the platform at https://www.getly.store/openapi.yaml.
+#
+# Formatting contract (scripts/generate-llms-txt.mjs parses this file with a
+# small YAML-subset parser): 2-space indent, block scalars only via | / |-,
+# no flow collections, no anchors/aliases, no inline comments after values.
+openapi: 3.1.0
+info:
+  title: Getly v1 API
+  version: 0.1.0
+  summary: Run a digital-products store entirely through HTTP — products, files, blog posts, coupons, checkout links, license keys, webhooks and payouts.
+  description: |-
+    Getly.store is a digital goods marketplace. This API lets you (or your AI
+    assistant) operate a seller store headlessly: create and publish products,
+    upload downloadable files, write blog posts, issue coupons, mint instant
+    checkout links, validate license keys from your shipped software, manage
+    webhooks and read your money.
+
+    Base URL: https://www.getly.store
+    All request and response bodies are JSON (UTF-8) unless stated otherwise.
+  x-conventions: |-
+    - Auth: send `Authorization: Bearer <key>`. Keys look like `getly_sk_live_<hex>`
+      (legacy `gk_` keys keep working). Read the key from the GETLY_API_KEY
+      environment variable — never hardcode it, never pass it as a CLI argument,
+      never log it.
+    - Money: ALL amounts are integer cents (minor units) via `priceCents`,
+      `compareAtPriceCents`, `discountedPriceCents`, `amountCents`,
+      `minOrderAmountCents`, `valueCents`, `sellerAmount`, `platformAmount`.
+      Legacy dollar-named fields exist for back-compat; use only the cents fields.
+    - Envelope: success responses are `{ "success": true, "data": ... }`;
+      errors are `{ "success": false, "error": "<human message>", "errorDetail":
+      { "code", "message", "hint", "docsUrl", "param?" } }`. Branch on
+      `errorDetail.code` — it is stable; `hint` says what to DO next.
+    - Pagination: cursor-based. Lists return `{ "items": [...], "nextCursor":
+      "<opaque>" | null }`; pass `?cursor=` to get the next page. The cursor is
+      base64("createdAtISO|id") — treat it as opaque. `limit` is 1-100, default 20.
+      (Exception: GET /api/v1/orders is legacy page/limit offset pagination.)
+    - Idempotency: send an `Idempotency-Key` header (any unique string, ≤255
+      chars) on every POST. Replays of a stored result return it verbatim with
+      `Idempotency-Replayed: true`; a key still processing returns 409
+      `idempotency_conflict` — wait 2-5s and retry with the SAME key. Keys live 24h.
+    - Rate limits: every v1 response carries `X-RateLimit-Limit`,
+      `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the window
+      resets). 429s also carry `Retry-After` (seconds). Throttle proactively when
+      X-RateLimit-Remaining gets low. Daily creation caps (products 20/day,
+      posts 5/day, coupons 30/day per key) return code `quota_exceeded`.
+    - CORS: all v1 routes answer OPTIONS preflight and send
+      `Access-Control-Allow-Origin: *`.
+  x-quickstart:
+    - title: List your products
+      curl: |-
+        curl https://www.getly.store/api/v1/products \
+          -H "Authorization: Bearer $GETLY_API_KEY"
+    - title: Create a draft product (price is integer cents)
+      curl: |-
+        curl -X POST https://www.getly.store/api/v1/products \
+          -H "Authorization: Bearer $GETLY_API_KEY" \
+          -H "Content-Type: application/json" \
+          -H "Idempotency-Key: create-notion-template-001" \
+          -d '{"name":"Notion Startup OS","priceCents":2900,"description":"A complete startup operating system for Notion.","status":"draft"}'
+    - title: Mint an instant checkout link
+      curl: |-
+        curl -X POST https://www.getly.store/api/v1/checkout-links \
+          -H "Authorization: Bearer $GETLY_API_KEY" \
+          -H "Content-Type: application/json" \
+          -H "Idempotency-Key: link-cust-42" \
+          -d '{"productId":"3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f","reference":"customer-42"}'
+  x-webhooks:
+    description: |-
+      Register endpoints with POST /api/v1/webhook-endpoints. Every delivery is
+      signed twice: the modern `X-Getly-Signature-V2: t=<unixSeconds>,v1=<hex
+      hmacSha256(secret, t + "." + rawBody)>` (verify t within 300 seconds
+      tolerance, then compare the HMAC timing-safe) and the legacy
+      `X-Getly-Signature: sha256=<hmacSha256(secret, rawBody)>`. The endpoint
+      secret is returned exactly once at creation. Subscribing to '*' receives
+      every event.
+    signatureHeader: X-Getly-Signature-V2
+    toleranceSeconds: 300
+    events:
+      - sale.completed
+      - product.created
+      - product.updated
+      - review.created
+      - download.completed
+      - refund.created
+      - refund.completed
+      - order.refunded
+      - checkout_link.completed
+      - license.activated
+      - dispute.created
+      - dispute.resolved
+      - subscription.created
+      - subscription.cancelled
+servers:
+  - url: https://www.getly.store
+security:
+  - bearerAuth: []
+tags:
+  - name: Products
+    description: Seller product catalog (create, publish, files).
+  - name: Posts
+    description: Creator blog posts (markdown source of truth).
+  - name: Coupons
+    description: Store discount codes.
+  - name: Checkout Links
+    description: Instant pay links with lazy Stripe session creation.
+  - name: Licenses
+    description: License keys — public validate/activate/deactivate + seller list.
+  - name: Uploads
+    description: Presigned direct-to-storage uploads.
+  - name: Webhook Endpoints
+    description: Webhook endpoint management.
+  - name: Store
+    description: Store profile, creation and payout onboarding.
+  - name: Orders
+    description: Read-only orders of the key's store.
+  - name: Analytics
+    description: Sales analytics and money snapshot.
+  - name: Public
+    description: No-auth endpoints (storefront widget, license checks, /go redirect).
+paths:
+  /api/v1/products:
+    get:
+      operationId: listProducts
+      tags:
+        - Products
+      x-scope: read:products
+      summary: List products of your store (cursor pagination)
+      description: Ordered createdAt DESC. Filter by status (default active), category id, or a name search.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          required: false
+          description: One of active, draft, pending_review, archived. Default active.
+          schema:
+            type: string
+            enum:
+              - active
+              - draft
+              - pending_review
+              - archived
+        - name: category
+          in: query
+          required: false
+          description: Category id (uuid).
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive product-name substring search.
+          schema:
+            type: string
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Page of products.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      name: Notion Startup OS
+                      slug: notion-startup-os-lx2a9f
+                      shortDescription: Run your startup from one Notion workspace.
+                      priceCents: 2900
+                      compareAtPriceCents: 4900
+                      price: 2900
+                      compareAtPrice: 4900
+                      status: active
+                      licenseKeysEnabled: false
+                      licenseActivationLimit: 3
+                      createdVia: api
+                      urls:
+                        product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                        buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                        embed: https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      createdAt: '2026-07-01T09:30:00.000Z'
+                  nextCursor: MjAyNi0wNy0wMVQwOTozMDowMC4wMDBafDNmNmY0YTNl
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: createProduct
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Create a product
+      description: |-
+        Accepts priceCents (preferred, integer minor units) or the deprecated
+        dollar `price`. A product cannot be created directly as `active`
+        without at least one downloadable file — create a draft, attach files,
+        then publish. Stores with 0 completed sales get `pending_review`
+        instead of `active` (first-sale trust gate). Daily cap 20 products/key.
+        Provenance is recorded as createdVia="api".
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - publish_requires_file
+        - quota_exceeded
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Notion Startup OS
+              description: A complete startup operating system for Notion — hiring, fundraising, OKRs.
+              shortDescription: Run your startup from one Notion workspace.
+              priceCents: 2900
+              compareAtPriceCents: 4900
+              categoryId: 8a3d2b1c-5e6f-4a7b-9c8d-0e1f2a3b4c5d
+              tags:
+                - notion
+                - template
+              status: draft
+              licenseKeysEnabled: true
+              licenseActivationLimit: 3
+              images:
+                - url: https://cdn.getly.store/images/api/store-uuid/abc123.webp
+                  altText: Dashboard preview
+              files:
+                - fileUrl: https://cdn.getly.store/files/user-uuid/xyz789.zip
+                  fileName: notion-startup-os.zip
+                  fileSize: 1048576
+                  fileType: application/zip
+      responses:
+        '201':
+          description: Product created (status draft, active, or pending_review when the trust gate applied).
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  name: Notion Startup OS
+                  slug: notion-startup-os-lx2a9f
+                  priceCents: 2900
+                  compareAtPriceCents: 4900
+                  status: draft
+                  licenseKeysEnabled: true
+                  licenseActivationLimit: 3
+                  createdVia: api
+                  attachedFiles: 1
+                  urls:
+                    product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    embed: https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+        '400':
+          description: Validation failed, or status "active" requested with no valid downloadable file.
+          content:
+            application/json:
+              example:
+                success: false
+                error: A product cannot be published (status "active") without at least one downloadable file. Create it as a draft and attach a file via POST /api/v1/products/{id}/files, then POST /api/v1/products/{id}/publish.
+                errorDetail:
+                  code: publish_requires_file
+                  message: A product cannot be published (status "active") without at least one downloadable file.
+                  hint: 'Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.'
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          description: Rate limited, or the 20 products/day creation cap was hit (code quota_exceeded).
+          content:
+            application/json:
+              example:
+                success: false
+                error: Daily product creation cap reached (20 per day per API key)
+                errorDetail:
+                  code: quota_exceeded
+                  message: Daily product creation cap reached (20 per day per API key)
+                  hint: Daily creation cap reached for this API key. Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+                  docsUrl: https://www.getly.store/developers/api#errors
+  /api/v1/products/{id}:
+    get:
+      operationId: getProduct
+      tags:
+        - Products
+      x-scope: read:products
+      summary: Get a product (with images, files metadata, category, latest reviews)
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Product detail. File entries include metadata only (no download URLs).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  name: Notion Startup OS
+                  slug: notion-startup-os-lx2a9f
+                  priceCents: 2900
+                  compareAtPriceCents: null
+                  status: active
+                  licenseKeysEnabled: true
+                  licenseActivationLimit: 3
+                  images:
+                    - url: https://cdn.getly.store/images/api/store-uuid/abc123.webp
+                      altText: Dashboard preview
+                      sortOrder: 0
+                  files:
+                    - id: 5c1d2e3f-6a7b-8c9d-0e1f-2a3b4c5d6e7f
+                      fileName: notion-startup-os.zip
+                      fileSize: 1048576
+                      fileType: application/zip
+                      version: '1.0'
+                      isLatest: true
+                  urls:
+                    product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    embed: https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      operationId: updateProduct
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Update a product
+      description: |-
+        Updatable: name, description, shortDescription, status (active/draft/
+        archived only), categoryId, tags, priceCents, compareAtPriceCents,
+        licenseKeysEnabled, licenseActivationLimit, images (full replacement).
+        Setting status "active" requires at least one downloadable file, and a
+        product in pending_review/rejected cannot be self-published
+        (moderation_locked). Providing `images` replaces the whole set.
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - publish_requires_file
+        - moderation_locked
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              priceCents: 1900
+              status: active
+      responses:
+        '200':
+          description: Updated product (same shape as getProduct).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  name: Notion Startup OS
+                  slug: notion-startup-os-lx2a9f
+                  priceCents: 1900
+                  status: active
+                  licenseKeysEnabled: true
+                  licenseActivationLimit: 3
+                  urls:
+                    product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    embed: https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Missing scope, or the product is moderation-locked.
+          content:
+            application/json:
+              example:
+                success: false
+                error: This product is under review and cannot be published until approved.
+                errorDetail:
+                  code: moderation_locked
+                  message: This product is under review and cannot be published until approved.
+                  hint: This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products — do not retry automatically.
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      operationId: archiveProduct
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Archive a product (soft delete)
+      description: Sets status to "archived". Not a hard delete — existing orders and downloads keep working. Archiving an already-archived product succeeds.
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Product archived.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  status: archived
+                message: Product archived
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/products/{id}/publish:
+    post:
+      operationId: publishProduct
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Publish a product (one call, machine-readable blockers)
+      description: |-
+        Flips the product to "active". On failure returns 422 with code
+        not_publishable and a `reasons` array — each entry has a machine
+        `code` (missing_file | moderation_locked | already_active) and a
+        `detail` explaining what to do. Stores with 0 completed sales get
+        pending_review instead of active (first-sale trust gate).
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - not_publishable
+        - idempotency_conflict
+        - rate_limited
+      responses:
+        '200':
+          description: Published (status active, or pending_review when a trust/AI gate applied — then `moderationStatus` and `note` explain why).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  slug: notion-startup-os-lx2a9f
+                  status: active
+                  priceCents: 2900
+                  urls:
+                    product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    embed: https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          description: Not publishable — fix every entry in `reasons`, then call publish again.
+          content:
+            application/json:
+              example:
+                success: false
+                error: Product is not publishable
+                errorDetail:
+                  code: not_publishable
+                  message: Product is not publishable
+                  hint: Fix every entry in `reasons` (each has a machine code and a detail explaining what to do), then call publish again.
+                  docsUrl: https://www.getly.store/developers/api#errors
+                reasons:
+                  - code: missing_file
+                    detail: 'Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files.'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/products/{id}/files:
+    get:
+      operationId: listProductFiles
+      tags:
+        - Products
+      x-scope: read:products
+      summary: List downloadable files attached to a product
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Attached files.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: 5c1d2e3f-6a7b-8c9d-0e1f-2a3b4c5d6e7f
+                    fileName: notion-startup-os.zip
+                    fileUrl: https://cdn.getly.store/files/user-uuid/xyz789.zip
+                    fileSize: 1048576
+                    fileType: application/zip
+                    version: '1.0'
+                    isLatest: true
+                    createdAt: '2026-07-01T09:30:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: attachProductFile
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Attach a downloadable file to a product
+      description: |-
+        Two modes. (A) multipart/form-data with a `file` part — uploaded
+        server-side (max 2GB, dangerous extensions blocked). (B) application/json
+        `{ fileUrl, fileName, fileSize, fileType?, versionNotes? }` — attaches an
+        object previously uploaded through the presign flow; fileUrl must be a
+        URL this API issued for YOUR store (files/<yourUserId>/ prefix).
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              fileUrl: https://cdn.getly.store/files/user-uuid/xyz789.zip
+              fileName: notion-startup-os.zip
+              fileSize: 1048576
+              fileType: application/zip
+              versionNotes: Initial release
+      responses:
+        '201':
+          description: File attached.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 5c1d2e3f-6a7b-8c9d-0e1f-2a3b4c5d6e7f
+                  productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  fileName: notion-startup-os.zip
+                  fileUrl: https://cdn.getly.store/files/user-uuid/xyz789.zip
+                  fileSize: 1048576
+                  fileType: application/zip
+                  isLatest: true
+                  createdAt: '2026-07-01T09:35:00.000Z'
+        '400':
+          description: Validation failed (e.g. foreign fileUrl, blocked extension, bad size).
+          content:
+            application/json:
+              example:
+                success: false
+                error: fileUrl must be an upload URL issued by this API for your own store (use the presign sub-route)
+                errorDetail:
+                  code: validation_failed
+                  message: fileUrl must be an upload URL issued by this API for your own store (use the presign sub-route)
+                  hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+                  docsUrl: https://www.getly.store/developers/api#errors
+                  param: fileUrl
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/products/{id}/files/presign:
+    post:
+      operationId: presignProductFile
+      tags:
+        - Products
+        - Uploads
+      x-scope: write:products
+      summary: Get a presigned upload URL for a large product file
+      description: |-
+        3-step upload flow for files up to 2GB:
+        1. POST here with { fileName, fileSize, fileType? } → { uploadUrl, fileUrl, key }.
+        2. PUT the raw bytes to `uploadUrl` (expires in 1h). Content-Length is
+           part of the signature — you must send exactly `fileSize` bytes.
+        3. POST /api/v1/products/{id}/files (JSON mode) with { fileUrl, fileName,
+           fileSize, fileType } to attach the uploaded object.
+        Objects never attached are garbage-collected after ~24h.
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              fileName: notion-startup-os.zip
+              fileSize: 1048576
+              fileType: application/zip
+      responses:
+        '200':
+          description: Presigned PUT URL (1h) + the final public fileUrl to attach in step 3.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  uploadUrl: https://accountid.r2.cloudflarestorage.com/bucket/files/user-uuid/xyz789.zip?X-Amz-Signature=...
+                  fileUrl: https://cdn.getly.store/files/user-uuid/xyz789.zip
+                  key: files/user-uuid/xyz789.zip
+                  fileName: notion-startup-os.zip
+                  fileSize: 1048576
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/uploads/images/presign:
+    post:
+      operationId: presignImageUpload
+      tags:
+        - Uploads
+      x-scope: write:products
+      summary: Get a presigned upload URL for an image (product images / post covers)
+      description: |-
+        Same 3-step flow as file presign, image-scoped (max 10MB; contentType
+        must be image/png, image/jpeg, image/webp, image/gif or image/avif):
+        1. POST here { fileSize, contentType } → { uploadUrl, publicUrl, expiresIn }.
+        2. PUT the raw bytes to `uploadUrl` (Content-Length must equal fileSize).
+        3. Reference `publicUrl` in a product `images[]` entry or a post
+           `coverImageUrl`. Never-attached objects are garbage-collected after ~24h.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              fileName: cover.webp
+              fileSize: 204800
+              contentType: image/webp
+      responses:
+        '200':
+          description: Presigned PUT URL + final public image URL.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  uploadUrl: https://accountid.r2.cloudflarestorage.com/bucket/images/api/store-uuid/abc123.webp?X-Amz-Signature=...
+                  publicUrl: https://cdn.getly.store/images/api/store-uuid/abc123.webp
+                  expiresIn: 3600
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/posts:
+    get:
+      operationId: listPosts
+      tags:
+        - Posts
+      x-scope: read:posts
+      summary: List your store's blog posts (cursor pagination)
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          required: false
+          description: Filter by status — draft or published.
+          schema:
+            type: string
+            enum:
+              - draft
+              - published
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Page of posts. Reads return BOTH contentMarkdown (source of truth) and derived, sanitized contentHtml.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - id: 9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d
+                      storeId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      title: How I built my template business
+                      slug: how-i-built-my-template-business
+                      excerpt: Lessons from selling 500 copies.
+                      contentMarkdown: '## The start...'
+                      contentHtml: <h2>The start...</h2>
+                      coverImageUrl: https://cdn.getly.store/images/api/store-uuid/cover.webp
+                      visibility: public
+                      status: published
+                      createdVia: api
+                      publishedAt: '2026-07-01T10:00:00.000Z'
+                      createdAt: '2026-07-01T10:00:00.000Z'
+                      updatedAt: '2026-07-01T10:00:00.000Z'
+                  nextCursor: null
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: createPost
+      tags:
+        - Posts
+      x-scope: write:posts
+      summary: Create a blog post (markdown)
+      description: |-
+        Markdown is the source of truth (contentMarkdown, ≤100KB). A `[product:slug]`
+        shortcode renders as a product card with a buy button on the public post
+        page. Slug auto-derives from the title (override with `slug`); per-store
+        collisions get a -2/-3 suffix. Daily cap 5 posts/key (quota_exceeded).
+        Cover images hosted outside Getly storage are accepted with a warning.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - quota_exceeded
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              title: How I built my template business
+              contentMarkdown: |-
+                ## The start
+
+                I shipped my first template in a weekend.
+
+                [product:notion-startup-os-lx2a9f]
+              excerpt: Lessons from selling 500 copies.
+              coverImageUrl: https://cdn.getly.store/images/api/store-uuid/cover.webp
+              status: published
+      responses:
+        '201':
+          description: Post created. May include a `warnings` string array (e.g. external cover host).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d
+                  title: How I built my template business
+                  slug: how-i-built-my-template-business
+                  excerpt: Lessons from selling 500 copies.
+                  contentMarkdown: '## The start...'
+                  contentHtml: <h2>The start...</h2>
+                  coverImageUrl: https://cdn.getly.store/images/api/store-uuid/cover.webp
+                  visibility: public
+                  status: published
+                  createdVia: api
+                  publishedAt: '2026-07-01T10:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          description: Rate limited, or the 5 posts/day cap was hit (code quota_exceeded).
+          content:
+            application/json:
+              example:
+                success: false
+                error: Daily post creation cap reached (5 posts per day per API key)
+                errorDetail:
+                  code: quota_exceeded
+                  message: Daily post creation cap reached (5 posts per day per API key)
+                  hint: Daily creation cap reached for this API key. Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+                  docsUrl: https://www.getly.store/developers/api#errors
+  /api/v1/posts/{id}:
+    get:
+      operationId: getPost
+      tags:
+        - Posts
+      x-scope: read:posts
+      summary: Get a blog post
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: The post (contentMarkdown + sanitized contentHtml).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d
+                  title: How I built my template business
+                  slug: how-i-built-my-template-business
+                  contentMarkdown: '## The start...'
+                  contentHtml: <h2>The start...</h2>
+                  status: published
+                  publishedAt: '2026-07-01T10:00:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      operationId: updatePost
+      tags:
+        - Posts
+      x-scope: write:posts
+      summary: Update a blog post
+      description: Updatable — title, contentMarkdown, status (draft/published; publishedAt is set on first publish and kept stable), excerpt (null clears), coverImageUrl (null clears), slug.
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              status: published
+              excerpt: Updated excerpt.
+      responses:
+        '200':
+          description: Updated post.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d
+                  title: How I built my template business
+                  status: published
+                  excerpt: Updated excerpt.
+                  publishedAt: '2026-07-01T10:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      operationId: deletePost
+      tags:
+        - Posts
+      x-scope: write:posts
+      summary: Delete a blog post (hard delete)
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d
+                  deleted: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/coupons:
+    get:
+      operationId: listCoupons
+      tags:
+        - Coupons
+      x-scope: read:coupons
+      summary: List your store's coupons (cursor pagination)
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: active
+          in: query
+          required: false
+          description: Filter by isActive — "true" or "false".
+          schema:
+            type: string
+            enum:
+              - 'true'
+              - 'false'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Page of coupons. `value` is a bare 1-100 integer for percentage coupons; for fixed coupons it is cents and a `valueCents` alias is included.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - id: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                      storeId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      code: LAUNCH20
+                      type: percentage
+                      value: 20
+                      minOrderAmount: 0
+                      minOrderAmountCents: 0
+                      maxUses: 100
+                      usedCount: 3
+                      isActive: true
+                      expiresAt: '2026-08-01T23:59:59.000Z'
+                      createdAt: '2026-07-01T10:00:00.000Z'
+                  nextCursor: null
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: createCoupon
+      tags:
+        - Coupons
+      x-scope: write:coupons
+      summary: Create a coupon
+      description: |-
+        code — 3-50 chars, A-Z 0-9 dashes, unique per store (uppercased).
+        type "percentage" (value 1-100) or "fixed" (value/valueCents in cents).
+        Percentage discounts of 90%+ require acknowledgeHighDiscount:true
+        (error high_discount_ack_required). Daily cap 30 coupons/key.
+        code, type and value are immutable after creation.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - high_discount_ack_required
+        - quota_exceeded
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              code: LAUNCH20
+              type: percentage
+              value: 20
+              minOrderAmountCents: 0
+              maxUses: 100
+              expiresAt: '2026-08-01'
+      responses:
+        '201':
+          description: Coupon created.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                  code: LAUNCH20
+                  type: percentage
+                  value: 20
+                  minOrderAmountCents: 0
+                  maxUses: 100
+                  usedCount: 0
+                  isActive: true
+                  expiresAt: '2026-08-01T23:59:59.000Z'
+        '400':
+          description: Validation failed, or a 90%+ discount without acknowledgeHighDiscount.
+          content:
+            application/json:
+              example:
+                success: false
+                error: 'This coupon gives a 90%+ discount — pass acknowledgeHighDiscount: true to confirm'
+                errorDetail:
+                  code: high_discount_ack_required
+                  message: 'This coupon gives a 90%+ discount — pass acknowledgeHighDiscount: true to confirm'
+                  hint: 'Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.'
+                  docsUrl: https://www.getly.store/developers/api#errors
+                  param: acknowledgeHighDiscount
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '409':
+          description: A coupon with this code already exists (code validation_failed), or Idempotency-Key still processing (code idempotency_conflict).
+          content:
+            application/json:
+              example:
+                success: false
+                error: A coupon with this code already exists
+                errorDetail:
+                  code: validation_failed
+                  message: A coupon with this code already exists
+                  hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+                  docsUrl: https://www.getly.store/developers/api#errors
+                  param: code
+        '429':
+          description: Rate limited, or the 30 coupons/day cap was hit (code quota_exceeded).
+          content:
+            application/json:
+              example:
+                success: false
+                error: Daily coupon creation cap reached (30/day per API key)
+                errorDetail:
+                  code: quota_exceeded
+                  message: Daily coupon creation cap reached (30/day per API key)
+                  hint: Daily creation cap reached for this API key. Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+                  docsUrl: https://www.getly.store/developers/api#errors
+  /api/v1/coupons/{id}:
+    patch:
+      operationId: updateCoupon
+      tags:
+        - Coupons
+      x-scope: write:coupons
+      summary: Update a coupon (isActive, expiresAt, maxUses only)
+      description: code, type and value are immutable — mutating a live discount silently changes already-shared codes. Create a new coupon and deactivate the old one instead.
+      parameters:
+        - $ref: '#/components/parameters/CouponId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              isActive: false
+      responses:
+        '200':
+          description: Updated coupon.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                  code: LAUNCH20
+                  type: percentage
+                  value: 20
+                  isActive: false
+        '400':
+          description: Validation failed, or an immutable field (code/type/value/valueCents) was provided.
+          content:
+            application/json:
+              example:
+                success: false
+                error: Field "value" is immutable after creation — create a new coupon and deactivate this one instead
+                errorDetail:
+                  code: validation_failed
+                  message: Field "value" is immutable after creation — create a new coupon and deactivate this one instead
+                  hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+                  docsUrl: https://www.getly.store/developers/api#errors
+                  param: value
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      operationId: deleteCoupon
+      tags:
+        - Coupons
+      x-scope: write:coupons
+      summary: Delete a never-used coupon
+      description: Coupons with usedCount > 0 cannot be deleted (orders reference them) — returns 409; deactivate via PATCH isActive:false instead.
+      parameters:
+        - $ref: '#/components/parameters/CouponId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  deleted: true
+                  id: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Coupon already used — deactivate instead.
+          content:
+            application/json:
+              example:
+                success: false
+                error: Coupon already used — deactivate it instead (PATCH isActive:false)
+                errorDetail:
+                  code: validation_failed
+                  message: Coupon already used — deactivate it instead (PATCH isActive:false)
+                  hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/checkout-links:
+    get:
+      operationId: listCheckoutLinks
+      tags:
+        - Checkout Links
+      x-scope: checkout:create
+      summary: List your checkout links (cursor pagination)
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          required: false
+          description: Filter — open, completed or expired.
+          schema:
+            type: string
+            enum:
+              - open
+              - completed
+              - expired
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+      responses:
+        '200':
+          description: Page of links.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - id: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+                      url: https://www.getly.store/go/4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+                      productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      status: open
+                      reference: customer-42
+                      metadata:
+                        chatId: '12345'
+                      orderId: null
+                      expiresAt: '2026-07-11T09:30:00.000Z'
+                      createdAt: '2026-07-04T09:30:00.000Z'
+                      completedAt: null
+                      currency: USD
+                  nextCursor: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: createCheckoutLink
+      tags:
+        - Checkout Links
+      x-scope: checkout:create
+      summary: Create an instant checkout link for one product
+      description: |-
+        Returns a shareable https://www.getly.store/go/{id} URL. The product must
+        be active and owned by your store. An optional coupon is auto-applied at
+        checkout (no code typing) and re-validated at click time. `reference`
+        (≤200 chars) and `metadata` (≤20 string entries, ≤2KB) are echoed into
+        the sale.completed / checkout_link.completed webhooks. Naturally
+        idempotent: an open, unexpired link with the same product + coupon +
+        reference is returned (200) instead of minting a new one (201).
+        Default expiry 7 days (expiresInHours 1-720). The Stripe session is
+        created lazily at click time, never here.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - not_found
+        - coupon_invalid
+        - not_publishable
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+              couponCode: LAUNCH20
+              reference: customer-42
+              metadata:
+                chatId: '12345'
+              expiresInHours: 168
+      responses:
+        '201':
+          description: Link created (200 when an equivalent open link was deduplicated). All amounts integer cents.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+                  url: https://www.getly.store/go/4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+                  productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  status: open
+                  reference: customer-42
+                  metadata:
+                    chatId: '12345'
+                  orderId: null
+                  expiresAt: '2026-07-11T09:30:00.000Z'
+                  createdAt: '2026-07-04T09:30:00.000Z'
+                  completedAt: null
+                  currency: USD
+                  priceCents: 2900
+                  discountedPriceCents: 2320
+                  couponApplied: true
+        '400':
+          description: Validation failed, or the coupon is invalid (code coupon_invalid).
+          content:
+            application/json:
+              example:
+                success: false
+                error: Coupon does not exist, is inactive, exhausted or expired
+                errorDetail:
+                  code: coupon_invalid
+                  message: Coupon does not exist, is inactive, exhausted or expired
+                  hint: The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
+                  docsUrl: https://www.getly.store/developers/api#errors
+                  param: couponCode
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Product not active (code not_publishable — publish it first), or Idempotency-Key still processing.
+          content:
+            application/json:
+              example:
+                success: false
+                error: Product status is 'draft' — only active products can be sold via checkout links
+                errorDetail:
+                  code: not_publishable
+                  message: Product status is 'draft' — only active products can be sold via checkout links
+                  hint: 'Publish the product first: POST /api/v1/products/{id}/publish.'
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/checkout-links/{id}:
+    get:
+      operationId: getCheckoutLink
+      tags:
+        - Checkout Links
+      x-scope: checkout:create
+      summary: Poll a checkout link's status
+      description: For bots without a public webhook URL — status is open, completed (then orderId is set) or expired.
+      parameters:
+        - $ref: '#/components/parameters/CheckoutLinkId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Link status.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+                  url: https://www.getly.store/go/4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+                  status: completed
+                  productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  reference: customer-42
+                  metadata:
+                    chatId: '12345'
+                  orderId: 6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b
+                  expiresAt: '2026-07-11T09:30:00.000Z'
+                  completedAt: '2026-07-04T11:02:33.000Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /go/{linkId}:
+    get:
+      operationId: redirectCheckoutLink
+      tags:
+        - Public
+        - Checkout Links
+      x-public: true
+      summary: Public checkout-link redirect (buyer-facing)
+      description: |-
+        NO auth — this is the URL you hand to buyers. Validates the link at
+        click time (product still active, seller not suspended, coupon still
+        valid), lazily creates the Stripe Checkout Session and 302-redirects
+        the buyer into payment with the coupon auto-applied. Stale/expired/
+        completed links redirect to the product page (full-price purchase stays
+        possible) — never a dead end. Per-IP velocity limited.
+      parameters:
+        - name: linkId
+          in: path
+          required: true
+          description: Checkout link id (uuid) from createCheckoutLink.
+          schema:
+            type: string
+            format: uuid
+      x-errors: []
+      responses:
+        '302':
+          description: Redirect to Stripe Checkout (happy path), or to the product page / homepage for stale links.
+  /api/v1/licenses:
+    get:
+      operationId: listLicenses
+      tags:
+        - Licenses
+      x-scope: read:licenses
+      summary: List license keys issued for your products (cursor pagination)
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: productId
+          in: query
+          required: false
+          description: Filter by one of your products (uuid).
+          schema:
+            type: string
+            format: uuid
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Page of license keys.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - id: 7f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c
+                      key: GETLY-A1B2-C3D4-E5F6-A7B8
+                      productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      status: active
+                      activationLimit: 3
+                      activationCount: 1
+                      activations:
+                        - fingerprint: machine-7f3b
+                          label: Work laptop
+                          activatedAt: '2026-07-02T08:00:00.000Z'
+                      createdAt: '2026-07-01T12:00:00.000Z'
+                  nextCursor: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/licenses/validate:
+    post:
+      operationId: validateLicense
+      tags:
+        - Licenses
+        - Public
+      x-public: true
+      summary: Validate a license key (PUBLIC, no auth)
+      description: |-
+        Call this from your shipped software to check a buyer's license. NO
+        auth header needed; rate-limited per IP (30/min). Every negative case
+        returns the same `{ valid: false }` (no oracle). Optionally pin the
+        check to a productId.
+      x-errors:
+        - validation_failed
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              key: GETLY-A1B2-C3D4-E5F6-A7B8
+              productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+      responses:
+        '200':
+          description: Validation result (200 for both valid and invalid keys).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  valid: true
+                  productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  status: active
+                  activationLimit: 3
+                  activationCount: 1
+                  activationsRemaining: 2
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/licenses/activate:
+    post:
+      operationId: activateLicense
+      tags:
+        - Licenses
+        - Public
+      x-public: true
+      summary: Activate a license on a device (PUBLIC, no auth)
+      description: |-
+        Claims an activation seat for a device/install. Idempotent per
+        fingerprint — re-activating an already-active fingerprint succeeds
+        without consuming a seat. fingerprint is any stable device/install
+        identifier (1-200 chars); label is an optional human name. Fires the
+        license.activated webhook to the product's store. Rate-limited per IP.
+      x-errors:
+        - validation_failed
+        - license_invalid
+        - activation_limit_reached
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              key: GETLY-A1B2-C3D4-E5F6-A7B8
+              fingerprint: machine-7f3b
+              label: Work laptop
+      responses:
+        '200':
+          description: Activated (alreadyActive true when this fingerprint had a seat).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  activated: true
+                  alreadyActive: false
+                  activationsRemaining: 2
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '404':
+          description: License key not found or deactivated.
+          content:
+            application/json:
+              example:
+                success: false
+                error: License key not found or deactivated
+                errorDetail:
+                  code: license_invalid
+                  message: License key not found or deactivated
+                  hint: The license key does not exist or was deactivated.
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '409':
+          description: All activation seats are in use.
+          content:
+            application/json:
+              example:
+                success: false
+                error: All 3 activation seats are in use
+                errorDetail:
+                  code: activation_limit_reached
+                  message: All 3 activation seats are in use
+                  hint: All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/licenses/deactivate:
+    post:
+      operationId: deactivateLicense
+      tags:
+        - Licenses
+        - Public
+      x-public: true
+      summary: Deactivate a license on a device (PUBLIC, no auth)
+      description: Releases an activation seat (device decommissioned / reinstall). Idempotent — deactivating a fingerprint that is not active succeeds as a no-op (wasActive false). Rate-limited per IP.
+      x-errors:
+        - validation_failed
+        - license_invalid
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              key: GETLY-A1B2-C3D4-E5F6-A7B8
+              fingerprint: machine-7f3b
+      responses:
+        '200':
+          description: Seat released.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  deactivated: true
+                  wasActive: true
+                  activationsRemaining: 3
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '404':
+          description: License key not found or deactivated.
+          content:
+            application/json:
+              example:
+                success: false
+                error: License key not found or deactivated
+                errorDetail:
+                  code: license_invalid
+                  message: License key not found or deactivated
+                  hint: The license key does not exist or was deactivated.
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/webhook-endpoints:
+    get:
+      operationId: listWebhookEndpoints
+      tags:
+        - Webhook Endpoints
+      x-scope: webhooks:manage
+      summary: List webhook endpoints (secret never returned)
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+      responses:
+        '200':
+          description: Endpoints (max 100; nextCursor is always null today).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - id: 8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d
+                      storeId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      url: https://example.com/webhooks/getly
+                      events:
+                        - sale.completed
+                        - checkout_link.completed
+                      isActive: true
+                      createdAt: '2026-07-01T10:00:00.000Z'
+                      updatedAt: '2026-07-01T10:00:00.000Z'
+                  nextCursor: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: createWebhookEndpoint
+      tags:
+        - Webhook Endpoints
+      x-scope: webhooks:manage
+      summary: Register a webhook endpoint
+      description: |-
+        url must be a public https address (private/internal IPs rejected —
+        SSRF guard). events is a non-empty array of event types, or ["*"] for
+        everything. The HMAC `secret` is returned EXACTLY ONCE in this response
+        — store it immediately; it cannot be retrieved again. See the
+        x-webhooks section for the signature scheme (X-Getly-Signature-V2,
+        300s tolerance).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              url: https://example.com/webhooks/getly
+              events:
+                - sale.completed
+                - checkout_link.completed
+                - license.activated
+      responses:
+        '201':
+          description: Endpoint created — `secret` is shown only once.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d
+                  storeId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  url: https://example.com/webhooks/getly
+                  events:
+                    - sale.completed
+                    - checkout_link.completed
+                    - license.activated
+                  isActive: true
+                  createdAt: '2026-07-04T10:00:00.000Z'
+                  secret: whsec_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/webhook-endpoints/{id}:
+    patch:
+      operationId: updateWebhookEndpoint
+      tags:
+        - Webhook Endpoints
+      x-scope: webhooks:manage
+      summary: Update a webhook endpoint (url, events, isActive)
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              isActive: false
+      responses:
+        '200':
+          description: Updated endpoint.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d
+                  storeId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  url: https://example.com/webhooks/getly
+                  events:
+                    - sale.completed
+                  isActive: false
+                  updatedAt: '2026-07-04T12:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      operationId: deleteWebhookEndpoint
+      tags:
+        - Webhook Endpoints
+      x-scope: webhooks:manage
+      summary: Delete a webhook endpoint
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d
+                  deleted: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/public/stores/{slug}/products:
+    get:
+      operationId: listPublicStoreProducts
+      tags:
+        - Public
+      x-public: true
+      summary: List a store's active products (PUBLIC, no auth)
+      description: |-
+        Load-bearing for the storefront widget. NO auth; CORS *; CDN-cached
+        (s-maxage=300). Only active products of non-suspended sellers; a missing
+        or suspended store reads as 404. Cursor pagination. Rate-limited per IP.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Store slug.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      x-errors:
+        - not_found
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Store header + page of public products (priceCents, up to 3 images, product/buy URLs).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  store:
+                    id: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                    name: Maker Studio
+                    slug: maker-studio
+                  items:
+                    - id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      slug: notion-startup-os-lx2a9f
+                      name: Notion Startup OS
+                      shortDescription: Run your startup from one Notion workspace.
+                      priceCents: 2900
+                      price: 2900
+                      currency: USD
+                      avgRating: 4.8
+                      reviewCount: 12
+                      images:
+                        - url: https://cdn.getly.store/images/api/store-uuid/abc123.webp
+                          altText: Dashboard preview
+                      urls:
+                        product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                        buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                  nextCursor: null
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/public/stores/{slug}/products/{productSlug}:
+    get:
+      operationId: getPublicStoreProduct
+      tags:
+        - Public
+      x-public: true
+      summary: Get one active product of a store (PUBLIC, no auth)
+      description: Same shape as the public list plus full description fields. Non-active products (draft/pending/rejected/archived) read as 404. CDN-cached (s-maxage=300).
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Store slug.
+          schema:
+            type: string
+        - name: productSlug
+          in: path
+          required: true
+          description: Product slug.
+          schema:
+            type: string
+      x-errors:
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Public product with description.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                  slug: notion-startup-os-lx2a9f
+                  name: Notion Startup OS
+                  shortDescription: Run your startup from one Notion workspace.
+                  description: A complete startup operating system for Notion — hiring, fundraising, OKRs.
+                  priceCents: 2900
+                  price: 2900
+                  currency: USD
+                  avgRating: 4.8
+                  reviewCount: 12
+                  images:
+                    - url: https://cdn.getly.store/images/api/store-uuid/abc123.webp
+                      altText: Dashboard preview
+                  urls:
+                    product: https://www.getly.store/product/notion-startup-os-lx2a9f
+                    buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/store:
+    get:
+      operationId: getStore
+      tags:
+        - Store
+      x-scope: read:store
+      summary: Get your store profile
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Full store row (with badges).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  name: Maker Studio
+                  slug: maker-studio
+                  description: Templates and tools for makers.
+                  website: https://maker.studio
+                  commissionPercent: 90
+                  badges: []
+                  createdAt: '2026-07-01T09:00:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: createStore
+      tags:
+        - Store
+      x-scope: write:store
+      summary: Create a store (one per user)
+      description: |-
+        Creates the store for the key's user if none exists (409 otherwise —
+        keys are store-bound, one store per user). Slug normalizes to a-z 0-9
+        dashes; omit it to auto-generate a unique one from the name. New stores
+        get the early-seller promo (90% revenue share for 90 days) and the user
+        role is bumped to seller.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Maker Studio
+              slug: maker-studio
+              description: Templates and tools for makers.
+      responses:
+        '201':
+          description: Store created.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  name: Maker Studio
+                  slug: maker-studio
+                  commissionPercent: 90
+                  createdAt: '2026-07-04T09:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '409':
+          description: You already have a store (or Idempotency-Key still processing).
+          content:
+            application/json:
+              example:
+                success: false
+                error: You already have a store
+                errorDetail:
+                  code: validation_failed
+                  message: You already have a store
+                  hint: Use GET /api/v1/store to read it and PATCH /api/v1/store to update it.
+                  docsUrl: https://www.getly.store/developers/api#errors
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    patch:
+      operationId: updateStore
+      tags:
+        - Store
+      x-scope: write:store
+      summary: Update your store profile
+      description: Updatable — name (1-100 chars), description (≤5000), website (http/https URL), socialLinks (object).
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              description: Templates and tools for indie makers.
+              website: https://maker.studio
+      responses:
+        '200':
+          description: Updated store.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  name: Maker Studio
+                  description: Templates and tools for indie makers.
+                  website: https://maker.studio
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/store/payout-onboarding:
+    post:
+      operationId: createPayoutOnboardingLink
+      tags:
+        - Store
+      x-scope: write:store
+      summary: Get a Stripe Connect payout-onboarding link
+      description: |-
+        Creates (or reuses) the Stripe Connect Express account for the key's
+        user and returns a fresh onboarding account-link URL. The URL is
+        short-lived — send the seller there promptly. This is one of the few
+        steps that must finish in a browser (Stripe identity collection).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - idempotency_conflict
+        - rate_limited
+      responses:
+        '200':
+          description: Onboarding link.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  url: https://connect.stripe.com/setup/e/acct_123/abcdef
+                  expiresAt: '2026-07-04T10:05:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/payouts:
+    get:
+      operationId: getPayouts
+      tags:
+        - Analytics
+        - Store
+      x-scope: read:store
+      summary: Read-only money snapshot (balances, upcoming payouts)
+      description: |-
+        Requires read:store OR read:analytics. Same single source of truth as
+        the dashboard payouts page, reconciled with the 1st/15th payout cron.
+        All amounts are integer cents. `method` per upcoming payout is stripe
+        or crypto depending on the seller's payout preference.
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+      responses:
+        '200':
+          description: Money snapshot.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  period:
+                    start: '2026-07-01T00:00:00.000Z'
+                    end: '2026-07-31T23:59:59.000Z'
+                  balances:
+                    pendingCents: 15200
+                    belowMinimumHeldCents: 0
+                    proPoolHeldCents: 0
+                    proPoolPendingCents: 0
+                  thisPeriod:
+                    incomeCents: 8700
+                    expensesCents: 0
+                    netCents: 8700
+                  lifetime:
+                    incomeCents: 45200
+                    paidOutCents: 30000
+                    pendingCents: 15200
+                  upcomingPayouts:
+                    - date: '2026-07-15T03:00:00.000Z'
+                      amountCents: 15200
+                      method: stripe
+                    - date: '2026-08-01T03:00:00.000Z'
+                      amountCents: 0
+                      method: stripe
+                    - date: '2026-08-15T03:00:00.000Z'
+                      amountCents: 0
+                      method: stripe
+                  payoutMethod: stripe
+                  minPayoutCents: 1000
+                  cryptoWalletIncomplete: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/orders:
+    get:
+      operationId: listOrders
+      tags:
+        - Orders
+      x-scope: read:orders
+      summary: List your store's order items (legacy page/limit pagination)
+      description: |-
+        NOTE — this endpoint uses legacy offset pagination (?page from 1,
+        ?limit 1-50), NOT cursors. Returns order items of your store with the
+        parent order and product; buyer email is never included. price,
+        sellerAmount and platformAmount are integer cents.
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number, from 1.
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          description: Items per page, 1-50 (default 20).
+          schema:
+            type: integer
+            default: 20
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+      responses:
+        '200':
+          description: Order items with total/page/limit/hasMore at the top level (legacy shape).
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: 5b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e
+                    orderId: 6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b
+                    productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                    price: 2900
+                    sellerAmount: 2320
+                    platformAmount: 580
+                    licenseType: personal
+                    createdAt: '2026-07-04T11:02:33.000Z'
+                    order:
+                      id: 6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b
+                      status: completed
+                      buyer:
+                        id: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                        name: Jane Buyer
+                    product:
+                      id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      name: Notion Startup OS
+                      slug: notion-startup-os-lx2a9f
+                total: 1
+                page: 1
+                limit: 20
+                hasMore: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/orders/{id}:
+    get:
+      operationId: getOrder
+      tags:
+        - Orders
+      x-scope: read:orders
+      summary: Get an order (items filtered to your store)
+      description: 403 when the order contains no items from your store. Buyer email is never included. total and item amounts are integer cents.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Order id (uuid).
+          schema:
+            type: string
+            format: uuid
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: Order with your store's items only.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b
+                  buyerId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                  buyer:
+                    id: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                    name: Jane Buyer
+                  status: completed
+                  total: 2900
+                  createdAt: '2026-07-04T11:02:33.000Z'
+                  items:
+                    - id: 5b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e
+                      productId: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
+                      price: 2900
+                      sellerAmount: 2320
+                      platformAmount: 580
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/analytics:
+    get:
+      operationId: getAnalytics
+      tags:
+        - Analytics
+      x-scope: read:analytics
+      summary: Sales analytics for your store
+      description: Revenue figures are your seller share in integer cents; salesByMonth covers the last 6 months.
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+      responses:
+        '200':
+          description: Analytics summary.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalSales: 42
+                  totalRevenue: 97400
+                  monthlySales: 5
+                  monthlyRevenue: 11600
+                  averageOrderValue: 2319
+                  productCount: 7
+                  totalDownloads: 156
+                  salesByMonth:
+                    - month: '2026-06'
+                      sales: 12
+                      revenue: 27840
+                    - month: '2026-07'
+                      sales: 5
+                      revenue: 11600
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: getly_sk_live_<hex>
+      description: |-
+        Send `Authorization: Bearer <key>`. Create keys at
+        https://www.getly.store/dashboard/developer/keys and grant only the
+        scopes you need. Keys look like `getly_sk_live_<64 hex>` (legacy `gk_`
+        keys keep working; rotated keys have a 24h grace window). Read the key
+        from the GETLY_API_KEY environment variable — never hardcode, never
+        log, never accept it as a CLI/tool argument.
+
+        Scopes: read:products, write:products, read:orders, read:store,
+        write:store, read:analytics, webhooks:manage, read:posts, write:posts,
+        read:coupons, write:coupons, read:licenses, write:licenses,
+        checkout:create.
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size, 1-100 (default 20).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+      schema:
+        type: string
+        maxLength: 255
+    ProductId:
+      name: id
+      in: path
+      required: true
+      description: Product id (uuid).
+      schema:
+        type: string
+        format: uuid
+    PostId:
+      name: id
+      in: path
+      required: true
+      description: Post id (uuid).
+      schema:
+        type: string
+        format: uuid
+    CouponId:
+      name: id
+      in: path
+      required: true
+      description: Coupon id (uuid).
+      schema:
+        type: string
+        format: uuid
+    CheckoutLinkId:
+      name: id
+      in: path
+      required: true
+      description: Checkout link id (uuid).
+      schema:
+        type: string
+        format: uuid
+    WebhookEndpointId:
+      name: id
+      in: path
+      required: true
+      description: Webhook endpoint id (uuid).
+      schema:
+        type: string
+        format: uuid
+  headers:
+    XRateLimitLimit:
+      description: Request ceiling for the current window.
+      schema:
+        type: integer
+    XRateLimitRemaining:
+      description: Requests remaining in the current window — throttle proactively when low.
+      schema:
+        type: integer
+    XRateLimitReset:
+      description: Seconds until the window resets.
+      schema:
+        type: integer
+    RetryAfter:
+      description: Seconds to wait before retrying (429 only).
+      schema:
+        type: integer
+    IdempotencyReplayed:
+      description: Present ("true") when this response was replayed from a stored Idempotency-Key result.
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing/invalid API key.
+      content:
+        application/json:
+          example:
+            success: false
+            error: Unauthorized
+            errorDetail:
+              code: unauthorized
+              message: Unauthorized
+              hint: 'Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys — read it from an environment variable, never hardcode it.'
+              docsUrl: https://www.getly.store/developers/api#errors
+    InsufficientScope:
+      description: The API key is missing the required scope (named in `param`).
+      content:
+        application/json:
+          example:
+            success: false
+            error: 'Missing scope: write:products'
+            errorDetail:
+              code: insufficient_scope
+              message: 'Missing scope: write:products'
+              hint: Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
+              docsUrl: https://www.getly.store/developers/api#errors
+              param: write:products
+    NotFound:
+      description: Resource not found (or owned by another store — ownership misses read as 404, never an oracle).
+      content:
+        application/json:
+          example:
+            success: false
+            error: Product not found
+            errorDetail:
+              code: not_found
+              message: Product not found
+              docsUrl: https://www.getly.store/developers/api#errors
+    ValidationFailed:
+      description: A request field is invalid — `param` names it.
+      content:
+        application/json:
+          example:
+            success: false
+            error: priceCents must be a non-negative integer (minor units)
+            errorDetail:
+              code: validation_failed
+              message: priceCents must be a non-negative integer (minor units)
+              hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+              docsUrl: https://www.getly.store/developers/api#errors
+              param: priceCents
+    RateLimited:
+      description: Too many requests — wait Retry-After seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/XRateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/XRateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/XRateLimitReset'
+      content:
+        application/json:
+          example:
+            success: false
+            error: Too many requests
+            errorDetail:
+              code: rate_limited
+              message: Too many requests
+              hint: Wait for the number of seconds in the Retry-After header, then retry. Throttle proactively when X-RateLimit-Remaining gets low.
+              docsUrl: https://www.getly.store/developers/api#errors
+    IdempotencyConflict:
+      description: A request with this Idempotency-Key is still processing — wait 2-5s and retry with the SAME key.
+      content:
+        application/json:
+          example:
+            success: false
+            error: A request with this Idempotency-Key is already processing
+            errorDetail:
+              code: idempotency_conflict
+              message: A request with this Idempotency-Key is already processing
+              hint: A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
+              docsUrl: https://www.getly.store/developers/api#errors
+  x-error-codes:
+    unauthorized: 'Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys — read it from an environment variable, never hardcode it.'
+    insufficient_scope: Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
+    rate_limited: Wait for the number of seconds in the Retry-After header, then retry. Throttle proactively when X-RateLimit-Remaining gets low.
+    validation_failed: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+    not_found: The resource does not exist or belongs to another store.
+    publish_requires_file: 'Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.'
+    moderation_locked: This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products — do not retry automatically.
+    not_publishable: Fix every entry in the `reasons` array (each has a machine code and a detail), then call publish again.
+    idempotency_conflict: A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
+    coupon_invalid: The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
+    high_discount_ack_required: 'Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.'
+    quota_exceeded: Daily creation cap reached for this API key (products 20/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+    expired: The resource has expired. Create a fresh one.
+    license_invalid: The license key does not exist or was deactivated.
+    activation_limit_reached: All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
+    internal_error: Unexpected server error — safe to retry with the same Idempotency-Key.
+  schemas:
+    ErrorDetail:
+      type: object
+      description: |-
+        Machine-readable error detail attached to every v1 error response
+        alongside the legacy `error` string. Branch on `code` (stable registry
+        — see ErrorCodes); `hint` is written for LLM consumption and says what
+        to DO next; `param` names the offending field or missing scope when
+        applicable.
+      required:
+        - code
+        - message
+        - docsUrl
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCodes'
+        message:
+          type: string
+          description: Human-readable error message (same as the top-level `error`).
+        hint:
+          type: string
+          description: Actionable next step, written for AI clients.
+        docsUrl:
+          type: string
+          format: uri
+          description: Link into https://www.getly.store/developers documentation.
+        param:
+          type: string
+          description: The request field (or scope) this error is about, when applicable.
+    ErrorCodes:
+      type: string
+      description: |-
+        Stable machine-readable error-code registry (src/lib/api-v1.ts is the
+        canonical source). Codes and what to do:
+        unauthorized — send Authorization Bearer key from the GETLY_API_KEY env var;
+        insufficient_scope — mint a key with the scope named in `param`;
+        rate_limited — wait Retry-After seconds, then retry;
+        validation_failed — fix the field named in `param` and re-send;
+        not_found — the resource does not exist or belongs to another store;
+        publish_requires_file — attach a downloadable file, then publish;
+        moderation_locked — awaiting/failed moderation, do not retry automatically;
+        not_publishable — fix every entry in the publish `reasons` array;
+        idempotency_conflict — same Idempotency-Key still processing, retry with the SAME key;
+        coupon_invalid — coupon missing/inactive/exhausted/foreign;
+        high_discount_ack_required — resend with acknowledgeHighDiscount true after confirming;
+        quota_exceeded — daily creation cap hit, retry after UTC midnight;
+        expired — create a fresh resource;
+        license_invalid — license key unknown or deactivated;
+        activation_limit_reached — free a seat via licenses/deactivate;
+        internal_error — server fault, safe to retry with the same Idempotency-Key.
+      enum:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+        - validation_failed
+        - not_found
+        - publish_requires_file
+        - moderation_locked
+        - not_publishable
+        - idempotency_conflict
+        - coupon_invalid
+        - high_discount_ack_required
+        - quota_exceeded
+        - expired
+        - license_invalid
+        - activation_limit_reached
+        - internal_error
+    ErrorEnvelope:
+      type: object
+      description: Every v1 error response body.
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Legacy human-readable message (kept for back-compat).
+        errorDetail:
+          $ref: '#/components/schemas/ErrorDetail'
+    Product:
+      type: object
+      description: Seller product as returned by the authenticated product endpoints. Money in integer cents via priceCents/compareAtPriceCents (legacy price/compareAtPrice carry the same cent values — use the *Cents names).
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+        description:
+          type: string
+        shortDescription:
+          type: string
+        priceCents:
+          type: integer
+          minimum: 0
+          description: Price in integer cents (minor units). THE money field.
+        compareAtPriceCents:
+          type: integer
+          minimum: 0
+          description: Strike-through price in cents, or null.
+        price:
+          type: integer
+          deprecated: true
+          description: Legacy alias — same integer-cents value as priceCents.
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+            - pending_review
+            - rejected
+            - archived
+        categoryId:
+          type: string
+          format: uuid
+        tags:
+          type: array
+          items:
+            type: string
+        licenseKeysEnabled:
+          type: boolean
+          description: When true a license key is issued to the buyer at fulfillment.
+        licenseActivationLimit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 3
+        createdVia:
+          type: string
+          description: Provenance — "api" for API-created products.
+        moderationStatus:
+          type: string
+          description: Present when a trust/AI gate queued the product for review (value pending_review).
+        note:
+          type: string
+          description: Human explanation accompanying moderationStatus.
+        urls:
+          type: object
+          properties:
+            product:
+              type: string
+              format: uri
+            buy:
+              type: string
+              format: uri
+              description: Purchase entry point (guest-checkout capable).
+            embed:
+              type: string
+              format: uri
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProductFile:
+      type: object
+      description: Downloadable file attached to a product. Download URLs are never exposed through the read API.
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        fileUrl:
+          type: string
+          format: uri
+          description: Storage URL (present on attach/list-files responses).
+        fileSize:
+          type: integer
+          description: Bytes.
+        fileType:
+          type: string
+        version:
+          type: string
+        isLatest:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    Post:
+      type: object
+      description: Creator blog post. Markdown (contentMarkdown) is the source of truth; contentHtml is derived and sanitized on every read.
+      properties:
+        id:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 500
+        slug:
+          type: string
+        excerpt:
+          type: string
+          maxLength: 500
+        contentMarkdown:
+          type: string
+          description: Raw markdown, ≤100KB. Supports the [product:slug] shortcode.
+        contentHtml:
+          type: string
+          description: Sanitized HTML rendered from contentMarkdown (read-only).
+        coverImageUrl:
+          type: string
+          format: uri
+        visibility:
+          type: string
+          const: public
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+        createdVia:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+          description: Set on first publish, kept stable afterwards.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Coupon:
+      type: object
+      description: Store coupon. For type=fixed, value/valueCents are integer cents; for type=percentage, value is a bare 1-100 integer (NOT money — no valueCents alias). code, type and value are immutable after creation.
+      properties:
+        id:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: ^[A-Z0-9-]{3,50}$
+        type:
+          type: string
+          enum:
+            - percentage
+            - fixed
+        value:
+          type: integer
+          description: Percentage 1-100, or cents when type=fixed.
+        valueCents:
+          type: integer
+          description: Present only for fixed coupons — same cents value as value.
+        minOrderAmount:
+          type: integer
+          description: Cents (legacy name).
+        minOrderAmountCents:
+          type: integer
+          description: Minimum order total in cents.
+        maxUses:
+          type: integer
+          description: Null = unlimited.
+        usedCount:
+          type: integer
+        isActive:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    CheckoutLink:
+      type: object
+      description: Instant pay link. Share `url` with the buyer; poll status or subscribe to checkout_link.completed.
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          description: The shareable https://www.getly.store/go/{id} redirect.
+        productId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - open
+            - completed
+            - expired
+        reference:
+          type: string
+          maxLength: 200
+          description: Your correlation id — echoed into webhooks.
+        metadata:
+          type: object
+          description: Up to 20 string entries, ≤2KB total — echoed into webhooks.
+        orderId:
+          type: string
+          format: uuid
+          description: Set once status=completed.
+        priceCents:
+          type: integer
+          description: Product price in cents at link time.
+        discountedPriceCents:
+          type: integer
+          description: Price after the coupon, in cents.
+        couponApplied:
+          type: boolean
+        currency:
+          type: string
+          const: USD
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+    LicenseKey:
+      type: object
+      description: License key issued at order fulfillment for products with licenseKeysEnabled.
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          description: Display format GETLY-XXXX-XXXX-XXXX-XXXX.
+        productId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - active
+            - deactivated
+        activationLimit:
+          type: integer
+        activationCount:
+          type: integer
+        activations:
+          type: array
+          items:
+            type: object
+            properties:
+              fingerprint:
+                type: string
+              label:
+                type: string
+              activatedAt:
+                type: string
+                format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    PublicProduct:
+      type: object
+      description: Public (no-auth) product shape for the storefront widget. Localized name/shortDescription/description variants (…Ru, …De) appear when available.
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        shortDescription:
+          type: string
+        description:
+          type: string
+          description: Only on the single-product endpoint.
+        priceCents:
+          type: integer
+        price:
+          type: integer
+          deprecated: true
+          description: Legacy alias — same cents value as priceCents.
+        currency:
+          type: string
+          const: USD
+        avgRating:
+          type: number
+        reviewCount:
+          type: integer
+        images:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+                format: uri
+              altText:
+                type: string
+        urls:
+          type: object
+          properties:
+            product:
+              type: string
+              format: uri
+            buy:
+              type: string
+              format: uri
+    WebhookEndpoint:
+      type: object
+      description: Registered webhook endpoint. `secret` appears exactly once — in the create response.
+      properties:
+        id:
+          type: string
+          format: uuid
+        storeId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+          description: Event types, or ["*"] for all. See x-webhooks for the list.
+        isActive:
+          type: boolean
+        secret:
+          type: string
+          description: HMAC secret — returned only at creation, store it immediately.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

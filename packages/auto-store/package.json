@@ -1,0 +1,41 @@
+{
+  "name": "@getly/auto-store",
+  "version": "0.1.0",
+  "description": "Point AI at a folder — get a live Getly product listing, a blog post and a checkout link.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Getly-Store/headless-sdk.git",
+    "directory": "packages/auto-store"
+  },
+  "homepage": "https://www.getly.store/developers",
+  "keywords": ["getly", "digital-products", "ai", "claude", "cli", "storefront"],
+  "bin": {
+    "getly-auto-store": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0"
+  }
+}

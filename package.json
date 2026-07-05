@@ -1,0 +1,24 @@
+{
+  "name": "getly-headless-sdk",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Getly Open API & Vibe-Coder SDK — run a digital-products store entirely through your AI assistant",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "generate:llms": "node scripts/generate-llms-txt.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Getly-Store/headless-sdk.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

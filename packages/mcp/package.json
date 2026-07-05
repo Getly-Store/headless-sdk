@@ -1,0 +1,53 @@
+{
+  "name": "@getly/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Getly — let Claude, Cursor and other AI assistants run your digital-products store (products, blog, coupons, checkout links, licenses).",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Getly-Store/headless-sdk.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://www.getly.store/developers",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "getly",
+    "digital-products",
+    "ecommerce",
+    "claude",
+    "cursor"
+  ],
+  "bin": {
+    "getly-mcp": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0"
+  }
+}
