@@ -1,7 +1,7 @@
 {
   "name": "@getly/auto-store",
   "version": "0.1.0",
-  "description": "Point AI at a folder \u2014 get a live Getly product listing, a blog post and a checkout link.",
+  "description": "Point AI at a folder — get a live Getly product listing, a blog post and a checkout link.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -48,5 +48,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
