@@ -206,9 +206,9 @@ console.log('Bot is running. Send /catalog to it on Telegram.');
 //        import { Webhooks } from '@getly/nextjs';
 //        export const POST = Webhooks({
 //          secret: process.env.GETLY_WEBHOOK_SECRET,
-//          onCheckoutLinkCompleted: async (event) => {
-//            // event.reference is the Telegram chat id we set above
-//            await bot.api.sendMessage(Number(event.reference),
+//          onCheckoutLinkCompleted: async (data) => {
+//            // data.reference is the Telegram chat id we set above
+//            await bot.api.sendMessage(Number(data.reference),
 //              '✅ Payment received — check your email for the download link!');
 //          },
 //        });

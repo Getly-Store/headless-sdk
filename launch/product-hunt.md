@@ -23,7 +23,7 @@ Alternates:
 
 > Getly Headless SDK turns Getly — a digital-products marketplace with card + crypto
 > checkout, file delivery, license keys and payouts — into a backend your AI
-> assistant drives directly. An MCP server with 16 tools puts the store inside
+> assistant drives directly. An MCP server with 18 tools puts the store inside
 > Cursor, Claude Code and Claude Desktop; a zero-dependency TypeScript SDK covers
 > products, blog posts, coupons, checkout links and licenses; and
 > `npx @getly/auto-store ./folder` points AI at a folder of files and comes back
@@ -44,7 +44,7 @@ Alternates:
 >
 > So we built the layer the AI needs:
 >
-> 🤖 **@getly/mcp** — 16 MCP tools. "Create a product from this folder, price it
+> 🤖 **@getly/mcp** — 18 MCP tools. "Create a product from this folder, price it
 > $19, write the listing, publish it" now works in Cursor / Claude Code / Claude
 > Desktop. Destructive actions require explicit confirmation; the key comes from
 > env only.

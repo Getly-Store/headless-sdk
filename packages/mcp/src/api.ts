@@ -13,6 +13,8 @@
  * - POST creates send an auto-generated Idempotency-Key.
  */
 
+import { Getly } from '@getly/sdk';
+
 export const DEFAULT_BASE_URL = 'https://www.getly.store';
 
 export function getBaseUrl(): string {
@@ -24,6 +26,15 @@ export function getBaseUrl(): string {
 export function getApiKey(): string | null {
   const key = process.env.GETLY_API_KEY;
   return key && key.trim() ? key.trim() : null;
+}
+
+/**
+ * Build a @getly/sdk client for the multi-step flows the SDK already solves
+ * (presign → PUT → attach uploads). Constructed per call so env changes and
+ * test fetch stubs are always picked up.
+ */
+export function getClient(): Getly {
+  return new Getly({ baseUrl: getBaseUrl() });
 }
 
 export interface ErrorDetail {
@@ -146,33 +157,4 @@ export async function apiRequest<T = unknown>(
   }
 
   return json as ApiEnvelope<T>;
-}
-
-/**
- * PUT raw bytes to a presigned upload URL. Content-Type and Content-Length
- * are part of the presign signature — they must match exactly what was
- * declared to the presign endpoint.
- */
-export async function putPresigned(
-  uploadUrl: string,
-  bytes: Buffer,
-  contentType: string,
-  timeoutMs = 300_000,
-): Promise<void> {
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-      'Content-Length': String(bytes.byteLength),
-    },
-    body: new Uint8Array(bytes),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) {
-    throw new GetlyApiError(res.status, {
-      code: 'upload_failed',
-      message: `Uploading bytes to storage failed with HTTP ${res.status}`,
-      hint: 'Request a fresh presigned URL (they expire after 1 hour) and make sure the file was not modified between presign and upload.',
-    });
-  }
 }

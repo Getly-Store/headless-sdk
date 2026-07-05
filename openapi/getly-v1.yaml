@@ -702,9 +702,10 @@ paths:
       x-scope: write:products
       summary: Get a presigned upload URL for an image (product images / post covers)
       description: |-
-        Same 3-step flow as file presign, image-scoped (max 10MB; contentType
-        must be image/png, image/jpeg, image/webp, image/gif or image/avif):
-        1. POST here { fileSize, contentType } → { uploadUrl, publicUrl, expiresIn }.
+        Same 3-step flow as file presign, image-scoped (max 10MB; fileType
+        must be image/png, image/jpeg, image/webp, image/gif or image/avif —
+        `contentType` is accepted as a legacy alias):
+        1. POST here { fileSize, fileType } → { uploadUrl, publicUrl, expiresIn }.
         2. PUT the raw bytes to `uploadUrl` (Content-Length must equal fileSize).
         3. Reference `publicUrl` in a product `images[]` entry or a post
            `coverImageUrl`. Never-attached objects are garbage-collected after ~24h.
@@ -723,7 +724,7 @@ paths:
             example:
               fileName: cover.webp
               fileSize: 204800
-              contentType: image/webp
+              fileType: image/webp
       responses:
         '200':
           description: Presigned PUT URL + final public image URL.

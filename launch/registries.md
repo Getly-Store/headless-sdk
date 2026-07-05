@@ -2,7 +2,7 @@
 
 Goal: `@getly/mcp` discoverable everywhere people look for MCP servers.
 **Prerequisites for ALL entries:** `@getly/mcp` published to npm (with provenance),
-repo public, `smithery.yaml` present in `packages/mcp`, README section for the server.
+repo public, `smithery.yaml` present at the repo root, README section for the server.
 
 > Registry submission flows change; the steps below are correct as of July 2026 —
 > re-verify each site's docs on submission day. Track status in the checklist at
@@ -17,7 +17,7 @@ repo public, `smithery.yaml` present in `packages/mcp`, README section for the s
 > Getly MCP server gives your assistant a real commerce backend: create and publish
 > digital products (with file upload), write store blog posts, mint coupons and
 > instant checkout links (card + USDT/USDC via guest checkout), manage license keys
-> and read sales stats. 16 tools with MCP annotations; destructive operations
+> and read sales stats. 18 tools with MCP annotations; destructive operations
 > require explicit confirmation; the API key is read from the `GETLY_API_KEY` env
 > var only. MIT, zero telemetry.
 
@@ -61,12 +61,12 @@ claude mcp add getly --env GETLY_API_KEY=your_key -- npx -y @getly/mcp
 ## 2. Smithery (smithery.ai)
 
 1. Sign in with the Getly-Store GitHub org account.
-2. "Add server" → point at `Getly-Store/headless-sdk` → subdirectory `packages/mcp`
-   (the `smithery.yaml` there declares the start command and the `GETLY_API_KEY`
-   config field — marked `required` + `secret`).
+2. "Add server" → point at `Getly-Store/headless-sdk` (the `smithery.yaml` at the
+   repo root declares the stdio start command and the required `getlyApiKey`
+   config field, mapped to the `GETLY_API_KEY` env var).
 3. Fill the listing with the shared copy above; set category **E-commerce**.
 4. Test the hosted playground with a throwaway key from a test store; confirm
-   `tools/list` returns 16 tools.
+   `tools/list` returns 18 tools.
 5. After approval, add the Smithery install badge to `packages/mcp/README.md`.
 
 ## 3. PulseMCP (pulsemcp.com)
@@ -96,8 +96,8 @@ claude mcp add getly --env GETLY_API_KEY=your_key -- npx -y @getly/mcp
 2. Provide the Cursor-specific config (`.cursor/mcp.json` snippet — same JSON as
    above) and the one-liner.
 3. Also submit a companion **rule**: the condensed Getly prompt from
-   `prompts/golden` as a Cursor rule ("Getly commerce assistant") — directory rules
-   rank well and link back to the MCP entry.
+   `prompts/golden-prompt.md` as a Cursor rule ("Getly commerce assistant") —
+   directory rules rank well and link back to the MCP entry.
 
 ## 6. mcp.so
 

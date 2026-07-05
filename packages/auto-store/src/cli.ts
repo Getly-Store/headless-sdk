@@ -6,8 +6,8 @@
  * They are never accepted as CLI arguments and never printed.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { Getly, GetlyError } from '@getly/sdk';
 import readline from 'node:readline/promises';
-import { GetlyApi, GetlyApiError } from './api.js';
 import { DEFAULT_MODEL, type AnthropicLike } from './draft.js';
 import { runAutoStore, type RunOptions } from './run.js';
 
@@ -141,10 +141,8 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  const api = new GetlyApi({
-    apiKey: getlyKey,
-    baseUrl: process.env.GETLY_API_URL,
-  });
+  const baseUrl = process.env.GETLY_API_URL;
+  const getly = new Getly({ apiKey: getlyKey, baseUrl });
   // Structural cast: the real SDK client satisfies the narrow AnthropicLike
   // surface (messages.create); the cast bridges its stricter param types.
   const anthropic = new Anthropic({ apiKey: anthropicKey }) as unknown as AnthropicLike;
@@ -154,15 +152,16 @@ async function main(): Promise<number> {
     const result = await runAutoStore(
       { folder: parsed.folder as string, ...parsed.options },
       {
-        api,
+        getly,
         anthropic,
+        baseUrl,
         log: (line) => console.log(line),
         confirm: async (q) => /^y(es)?$/i.test((await rl.question(q)).trim()),
       },
     );
     return result.status === 'aborted' ? 1 : 0;
   } catch (err) {
-    if (err instanceof GetlyApiError) {
+    if (err instanceof GetlyError) {
       console.error(`\nGetly API error [${err.code}] (HTTP ${err.status}): ${err.message}`);
       if (err.hint) console.error(`Hint: ${err.hint}`);
       if (err.docsUrl) console.error(`Docs: ${err.docsUrl}`);

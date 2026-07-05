@@ -1,7 +1,7 @@
 {
   "name": "@getly/auto-store",
   "version": "0.1.0",
-  "description": "Point AI at a folder — get a live Getly product listing, a blog post and a checkout link.",
+  "description": "Point AI at a folder \u2014 get a live Getly product listing, a blog post and a checkout link.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -10,7 +10,14 @@
     "directory": "packages/auto-store"
   },
   "homepage": "https://www.getly.store/developers",
-  "keywords": ["getly", "digital-products", "ai", "claude", "cli", "storefront"],
+  "keywords": [
+    "getly",
+    "digital-products",
+    "ai",
+    "claude",
+    "cli",
+    "storefront"
+  ],
   "bin": {
     "getly-auto-store": "./dist/cli.js"
   },
@@ -22,7 +29,10 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -33,7 +43,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0"
+    "@anthropic-ai/sdk": "^0.110.0",
+    "@getly/sdk": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0"

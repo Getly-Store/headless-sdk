@@ -17,9 +17,7 @@ startCommand:
           scopes your workflow needs.
   commandFunction: |-
     (config) => ({
-      command: 'node',
-      args: ['packages/mcp/dist/cli.js'],
+      command: 'npx',
+      args: ['-y', '@getly/mcp'],
       env: { GETLY_API_KEY: config.getlyApiKey }
     })
-build:
-  dockerBuildPath: .

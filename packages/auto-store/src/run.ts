@@ -6,22 +6,35 @@
  *   publish (moderation-aware, HONEST) → blog post with [product:slug] →
  *   checkout link → print URLs.
  *
+ * All v1 API traffic goes through @getly/sdk (Bearer auth, { success, data }
+ * envelope, integer-cents money, automatic Idempotency-Key + 429 retries).
+ *
  * --dry-run stops after the category step and performs ZERO writes
  * (the only network call is the public GET /api/categories).
  */
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { GetlyApi, GetlyApiError, type V1CheckoutLink, type V1Post, type V1Product } from './api.js';
+import {
+  DEFAULT_BASE_URL,
+  Getly,
+  GetlyError,
+  type CheckoutLink,
+  type ImageContentType,
+  type Post,
+  type ProductWithModeration,
+  type PublishBlockedReason,
+} from '@getly/sdk';
 import {
   fallbackCategory,
+  fetchCategories,
   flattenCategories,
   matchCategory,
   type FlatCategory,
 } from './categories.js';
 import { draftListing, DEFAULT_MODEL, type AnthropicLike } from './draft.js';
 import { scanFolder, type ScannedFile, type ScanResult } from './scan.js';
-import { PRODUCT_SLUG_PLACEHOLDER, type DraftedListing } from './types.js';
+import type { DraftedListing } from './types.js';
 
 export const MAX_IMAGES = 5;
 export const MAX_PRODUCT_FILES = 10;
@@ -39,10 +52,15 @@ export interface RunOptions {
 }
 
 export interface RunDeps {
-  api: GetlyApi;
+  /** Authenticated @getly/sdk client (v1 API). */
+  getly: Getly;
   anthropic: AnthropicLike;
   log: (line: string) => void;
   confirm: (question: string) => Promise<boolean>;
+  /** API origin — used for the public categories fetch and printed URLs. */
+  baseUrl?: string;
+  /** fetch used for the PUBLIC categories endpoint (tests inject a fake). */
+  fetchImpl?: typeof fetch;
   readFile?: (absPath: string) => Promise<Uint8Array>;
 }
 
@@ -54,14 +72,14 @@ export interface RunResult {
   listing: DraftedListing;
   category: FlatCategory | null;
   categoryFellBack: boolean;
-  product?: V1Product;
-  post?: V1Post;
-  checkoutLink?: V1CheckoutLink;
+  product?: ProductWithModeration;
+  post?: Post;
+  checkoutLink?: CheckoutLink;
   moderationNote?: string;
-  publishBlockers?: Array<{ code: string; detail: string }>;
+  publishBlockers?: PublishBlockedReason[];
 }
 
-const IMAGE_MIME: Record<string, string> = {
+const IMAGE_MIME: Record<string, ImageContentType> = {
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
@@ -117,7 +135,7 @@ function summarizeListing(listing: DraftedListing, log: (l: string) => void): vo
 }
 
 async function uploadImages(
-  api: GetlyApi,
+  getly: Getly,
   images: ScannedFile[],
   readFile: (p: string) => Promise<Uint8Array>,
   log: (l: string) => void,
@@ -131,20 +149,19 @@ async function uploadImages(
     const contentType = IMAGE_MIME[img.ext];
     if (!contentType) continue;
     const bytes = await readFile(img.absPath);
-    const presign = await api.uploads.presignImage({
-      fileName: img.name,
-      fileSize: bytes.byteLength,
+    const { publicUrl } = await getly.uploads.uploadImage({
+      data: bytes,
       contentType,
+      fileName: img.name,
     });
-    await api.putBytes(presign.uploadUrl, bytes, contentType);
-    uploaded.push({ url: presign.publicUrl, altText: img.name });
+    uploaded.push({ url: publicUrl, altText: img.name });
     log(`  ↑ image ${img.relPath}`);
   }
   return uploaded;
 }
 
 async function uploadProductFiles(
-  api: GetlyApi,
+  getly: Getly,
   productId: string,
   productFiles: ScannedFile[],
   readFile: (p: string) => Promise<Uint8Array>,
@@ -160,19 +177,11 @@ async function uploadProductFiles(
   }
   let attached = 0;
   for (const file of selected) {
-    const contentType = fileMime(file.ext);
     const bytes = await readFile(file.absPath);
-    const presign = await api.products.presignFile(productId, {
+    await getly.products.uploadFile(productId, {
       fileName: file.name,
-      fileSize: bytes.byteLength,
-      fileType: contentType,
-    });
-    await api.putBytes(presign.uploadUrl, bytes, contentType);
-    await api.products.attachFile(productId, {
-      fileUrl: presign.fileUrl,
-      fileName: file.name,
-      fileSize: bytes.byteLength,
-      fileType: contentType,
+      data: bytes,
+      fileType: fileMime(file.ext),
     });
     attached++;
     log(`  ↑ file ${file.relPath}`);
@@ -181,7 +190,9 @@ async function uploadProductFiles(
 }
 
 export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<RunResult> {
-  const { api, anthropic, log, confirm } = deps;
+  const { getly, anthropic, log, confirm } = deps;
+  const baseUrl = (deps.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const fetchImpl = deps.fetchImpl ?? fetch;
   const readFile = deps.readFile ?? (async (p: string) => new Uint8Array(await fs.readFile(p)));
   const dryRun = opts.dryRun ?? false;
   const publish = opts.publish ?? true;
@@ -209,7 +220,7 @@ export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<Run
   if (opts.priceCents !== undefined) listing.suggestedPriceCents = opts.priceCents;
 
   // 3. Resolve category (public read — allowed in dry-run) --------------------
-  const tree = await api.categories.list();
+  const tree = await fetchCategories(baseUrl, fetchImpl);
   const flat = flattenCategories(tree);
   const match = matchCategory(listing.categoryQuery, flat);
   let category = match?.category ?? null;
@@ -247,7 +258,7 @@ export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<Run
 
   // 5. Confirm ----------------------------------------------------------------
   if (!opts.yes) {
-    const go = await confirm(`Create "${listing.name}" on ${api.baseUrl}? [y/N] `);
+    const go = await confirm(`Create "${listing.name}" on ${baseUrl}? [y/N] `);
     if (!go) {
       log('Aborted. Nothing was created.');
       return { status: 'aborted', scan, listing, category, categoryFellBack };
@@ -255,11 +266,11 @@ export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<Run
   }
 
   // 6. Upload images -----------------------------------------------------------
-  const images = await uploadImages(api, scan.images, readFile, log);
+  const images = await uploadImages(getly, scan.images, readFile, log);
 
   // 7. Create draft product (idempotent on folder+name) ------------------------
   const base = idempotencyBase(scan.folderPath, listing.name);
-  const product = await api.products.create(
+  const product = await getly.products.create(
     {
       name: listing.name,
       description: listing.description,
@@ -270,12 +281,12 @@ export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<Run
       status: 'draft',
       ...(images.length > 0 ? { images } : {}),
     },
-    `autostore-product-${base}`,
+    { idempotencyKey: `autostore-product-${base}` },
   );
   log(`Created draft product: ${product.name ?? listing.name} (${product.id})`);
 
   // 8. Upload downloadable files ------------------------------------------------
-  const attached = await uploadProductFiles(api, product.id, scan.productFiles, readFile, log);
+  const attached = await uploadProductFiles(getly, product.id, scan.productFiles, readFile, log);
   if (attached === 0) {
     log('Warning: no downloadable files were attached — publish will be blocked until one exists.');
   }
@@ -283,32 +294,42 @@ export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<Run
   // 9. Publish (honest about moderation) ----------------------------------------
   let status: RunStatus = 'draft';
   let moderationNote: string | undefined;
-  let publishBlockers: Array<{ code: string; detail: string }> | undefined;
+  let publishBlockers: PublishBlockedReason[] | undefined;
   let finalProduct = product;
 
   if (publish) {
-    const result = await api.products.publish(product.id, `autostore-publish-${base}`);
-    if (result.published) {
-      finalProduct = { ...product, ...result.product };
-      if (result.product.status === 'active') {
+    let published: ProductWithModeration | null = null;
+    try {
+      published = await getly.products.publish(product.id, {
+        idempotencyKey: `autostore-publish-${base}`,
+      });
+    } catch (err) {
+      // 422 not_publishable is a NORMAL outcome (missing file, moderation
+      // lock) — report every machine-readable blocker honestly.
+      if (err instanceof GetlyError && err.code === 'not_publishable') {
+        publishBlockers = err.reasons ?? [];
+        log('✗ Publish blocked — the product stays a draft. Reasons:');
+        for (const reason of publishBlockers) {
+          log(`   - [${reason.code}] ${reason.detail}`);
+        }
+      } else {
+        throw err;
+      }
+    }
+    if (published) {
+      finalProduct = { ...product, ...published };
+      if (published.status === 'active') {
         status = 'live';
         log(`✔ Product is LIVE: ${finalProduct.urls?.product ?? product.urls.product}`);
-      } else if (result.product.moderationStatus === 'pending_review' || result.product.status === 'pending_review') {
+      } else if (published.moderationStatus === 'pending_review' || published.status === 'pending_review') {
         status = 'awaiting-review';
-        moderationNote = result.product.note;
+        moderationNote = published.note;
         log('⏳ Product submitted — awaiting review. It is NOT live yet.');
         if (moderationNote) log(`   Reviewer note: ${moderationNote}`);
         log('   You will be able to see the status in your dashboard: https://www.getly.store/dashboard/products');
       } else {
         status = 'draft';
-        log(`Product status after publish: ${result.product.status} (not live).`);
-      }
-    } else {
-      status = 'draft';
-      publishBlockers = result.reasons;
-      log('✗ Publish blocked — the product stays a draft. Reasons:');
-      for (const reason of result.reasons) {
-        log(`   - [${reason.code}] ${reason.detail}`);
+        log(`Product status after publish: ${published.status} (not live).`);
       }
     }
   } else {
@@ -316,42 +337,42 @@ export async function runAutoStore(opts: RunOptions, deps: RunDeps): Promise<Run
   }
 
   // 10. Blog post ----------------------------------------------------------------
-  let post: V1Post | undefined;
+  let post: Post | undefined;
   let postUrl: string | undefined;
   try {
     const contentMarkdown = embedProductSlug(listing.blogArticle.contentMarkdown, finalProduct.slug);
-    post = await api.posts.create(
+    post = await getly.posts.create(
       {
         title: listing.blogArticle.title,
         contentMarkdown,
         excerpt: listing.blogArticle.excerpt || undefined,
         status: 'published',
       },
-      `autostore-post-${base}`,
+      { idempotencyKey: `autostore-post-${base}` },
     );
     try {
-      const store = await api.store.get();
-      postUrl = `${api.baseUrl}/store/${store.slug}/posts/${post.slug}`;
+      const store = await getly.store.get();
+      postUrl = `${baseUrl}/store/${store.slug}/posts/${post.slug}`;
     } catch {
       postUrl = undefined;
     }
     log(`✔ Blog post published: ${postUrl ?? `(slug: ${post.slug})`}`);
   } catch (err) {
-    log(`Blog post skipped: ${err instanceof GetlyApiError ? `[${err.code}] ${err.message}` : String(err)}`);
+    log(`Blog post skipped: ${err instanceof GetlyError ? `[${err.code}] ${err.message}` : String(err)}`);
   }
 
   // 11. Checkout link — only makes sense for a LIVE product ----------------------
-  let checkoutLink: V1CheckoutLink | undefined;
+  let checkoutLink: CheckoutLink | undefined;
   if (status === 'live') {
     try {
-      checkoutLink = await api.checkoutLinks.create(
+      checkoutLink = await getly.checkoutLinks.create(
         { productId: finalProduct.id, reference: 'auto-store' },
-        `autostore-link-${base}`,
+        { idempotencyKey: `autostore-link-${base}` },
       );
       log(`✔ Checkout link: ${checkoutLink.url}`);
     } catch (err) {
       log(
-        `Checkout link skipped: ${err instanceof GetlyApiError ? `[${err.code}] ${err.message}` : String(err)}`,
+        `Checkout link skipped: ${err instanceof GetlyError ? `[${err.code}] ${err.message}` : String(err)}`,
       );
     }
   } else {

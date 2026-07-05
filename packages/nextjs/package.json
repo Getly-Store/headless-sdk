@@ -1,0 +1,57 @@
+{
+  "name": "@getly/nextjs",
+  "version": "0.1.0",
+  "description": "Next.js App Router adapters for Getly — Checkout() and Webhooks() route-handler factories.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Getly-Store/headless-sdk.git",
+    "directory": "packages/nextjs"
+  },
+  "homepage": "https://www.getly.store/developers",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "npm --prefix ../sdk-js run build",
+    "build": "tsc -p tsconfig.json",
+    "pretypecheck": "npm --prefix ../sdk-js run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm --prefix ../sdk-js run build",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "getly",
+    "nextjs",
+    "checkout",
+    "webhooks",
+    "commerce"
+  ],
+  "dependencies": {
+    "@getly/sdk": "0.1.0"
+  },
+  "peerDependencies": {
+    "next": ">=14"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  }
+}

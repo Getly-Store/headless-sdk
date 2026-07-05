@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Questions & show-and-tell (Discussions)
+    url: https://github.com/Getly-Store/headless-sdk/discussions
+    about: How-to questions, ideas you want to talk through, and things you built — bugs and concrete feature requests go in Issues.
+  - name: 🔐 Security issue (do NOT open a public issue)
+    url: https://www.getly.store/contact
+    about: Report vulnerabilities privately — key leaks, auth bypasses, webhook signature problems.
+  - name: 📚 API documentation
+    url: https://www.getly.store/developers
+    about: Endpoint reference, quickstart, and the OpenAPI spec.

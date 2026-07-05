@@ -1,0 +1,1694 @@
+# Getly v1 API
+
+> Run a digital-products store entirely through HTTP — products, files, blog posts, coupons, checkout links, license keys, webhooks and payouts.
+
+Generated from `openapi/getly-v1.yaml` (github.com/Getly-Store/headless-sdk) — do not edit by hand; run `node scripts/generate-llms-txt.mjs`.
+
+Base URL: https://www.getly.store
+Machine-readable spec: https://www.getly.store/openapi.yaml
+
+## Quickstart
+
+### List your products
+
+```bash
+curl https://www.getly.store/api/v1/products \
+  -H "Authorization: Bearer $GETLY_API_KEY"
+```
+
+### Create a draft product (price is integer cents)
+
+```bash
+curl -X POST https://www.getly.store/api/v1/products \
+  -H "Authorization: Bearer $GETLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-notion-template-001" \
+  -d '{"name":"Notion Startup OS","priceCents":2900,"description":"A complete startup operating system for Notion.","status":"draft"}'
+```
+
+### Mint an instant checkout link
+
+```bash
+curl -X POST https://www.getly.store/api/v1/checkout-links \
+  -H "Authorization: Bearer $GETLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: link-cust-42" \
+  -d '{"productId":"3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f","reference":"customer-42"}'
+```
+
+## Authentication
+
+Send `Authorization: Bearer <key>`. Create keys at
+https://www.getly.store/dashboard/developer/keys and grant only the
+scopes you need. Keys look like `getly_sk_live_<64 hex>` (legacy `gk_`
+keys keep working; rotated keys have a 24h grace window). Read the key
+from the GETLY_API_KEY environment variable — never hardcode, never
+log, never accept it as a CLI/tool argument.
+
+Scopes: read:products, write:products, read:orders, read:store,
+write:store, read:analytics, webhooks:manage, read:posts, write:posts,
+read:coupons, write:coupons, read:licenses, write:licenses,
+checkout:create.
+
+## Conventions
+
+- Auth: send `Authorization: Bearer <key>`. Keys look like `getly_sk_live_<hex>`
+  (legacy `gk_` keys keep working). Read the key from the GETLY_API_KEY
+  environment variable — never hardcode it, never pass it as a CLI argument,
+  never log it.
+- Money: ALL amounts are integer cents (minor units) via `priceCents`,
+  `compareAtPriceCents`, `discountedPriceCents`, `amountCents`,
+  `minOrderAmountCents`, `valueCents`, `sellerAmount`, `platformAmount`.
+  Legacy dollar-named fields exist for back-compat; use only the cents fields.
+- Envelope: success responses are `{ "success": true, "data": ... }`;
+  errors are `{ "success": false, "error": "<human message>", "errorDetail":
+  { "code", "message", "hint", "docsUrl", "param?" } }`. Branch on
+  `errorDetail.code` — it is stable; `hint` says what to DO next.
+- Pagination: cursor-based. Lists return `{ "items": [...], "nextCursor":
+  "<opaque>" | null }`; pass `?cursor=` to get the next page. The cursor is
+  base64("createdAtISO|id") — treat it as opaque. `limit` is 1-100, default 20.
+  (Exception: GET /api/v1/orders is legacy page/limit offset pagination.)
+- Idempotency: send an `Idempotency-Key` header (any unique string, ≤255
+  chars) on every POST. Replays of a stored result return it verbatim with
+  `Idempotency-Replayed: true`; a key still processing returns 409
+  `idempotency_conflict` — wait 2-5s and retry with the SAME key. Keys live 24h.
+- Rate limits: every v1 response carries `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the window
+  resets). 429s also carry `Retry-After` (seconds). Throttle proactively when
+  X-RateLimit-Remaining gets low. Daily creation caps (products 20/day,
+  posts 5/day, coupons 30/day per key) return code `quota_exceeded`.
+- CORS: all v1 routes answer OPTIONS preflight and send
+  `Access-Control-Allow-Origin: *`.
+
+## Error codes
+
+Every error response is `{ "success": false, "error": "<message>", "errorDetail": { "code", "message", "hint", "docsUrl", "param?" } }`. Branch on `errorDetail.code`:
+
+- `unauthorized` — Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys — read it from an environment variable, never hardcode it.
+- `insufficient_scope` — Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
+- `rate_limited` — Wait for the number of seconds in the Retry-After header, then retry. Throttle proactively when X-RateLimit-Remaining gets low.
+- `validation_failed` — Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+- `not_found` — The resource does not exist or belongs to another store.
+- `publish_requires_file` — Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.
+- `moderation_locked` — This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products — do not retry automatically.
+- `not_publishable` — Fix every entry in the `reasons` array (each has a machine code and a detail), then call publish again.
+- `idempotency_conflict` — A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
+- `coupon_invalid` — The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
+- `high_discount_ack_required` — Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.
+- `quota_exceeded` — Daily creation cap reached for this API key (products 20/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+- `expired` — The resource has expired. Create a fresh one.
+- `license_invalid` — The license key does not exist or was deactivated.
+- `activation_limit_reached` — All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
+- `internal_error` — Unexpected server error — safe to retry with the same Idempotency-Key.
+
+## Webhooks
+
+Register endpoints with POST /api/v1/webhook-endpoints. Every delivery is
+signed twice: the modern `X-Getly-Signature-V2: t=<unixSeconds>,v1=<hex
+hmacSha256(secret, t + "." + rawBody)>` (verify t within 300 seconds
+tolerance, then compare the HMAC timing-safe) and the legacy
+`X-Getly-Signature: sha256=<hmacSha256(secret, rawBody)>`. The endpoint
+secret is returned exactly once at creation. Subscribing to '*' receives
+every event.
+
+Events: `sale.completed`, `product.created`, `product.updated`, `review.created`, `download.completed`, `refund.created`, `refund.completed`, `order.refunded`, `checkout_link.completed`, `license.activated`, `dispute.created`, `dispute.resolved`, `subscription.created`, `subscription.cancelled`.
+
+## Endpoints
+
+### GET /api/v1/products — List products of your store (cursor pagination)
+
+operationId: `listProducts` · scope `read:products`
+
+Ordered createdAt DESC. Filter by status (default active), category id, or a name search.
+
+Parameters:
+- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+- `limit` (query) — Page size, 1-100 (default 20).
+- `status` (query) — One of active, draft, pending_review, archived. Default active.
+- `category` (query) — Category id (uuid).
+- `search` (query) — Case-insensitive product-name substring search.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+        "name": "Notion Startup OS",
+        "slug": "notion-startup-os-lx2a9f",
+        "shortDescription": "Run your startup from one Notion workspace.",
+        "priceCents": 2900,
+        "compareAtPriceCents": 4900,
+        "price": 2900,
+        "compareAtPrice": 4900,
+        "status": "active",
+        "licenseKeysEnabled": false,
+        "licenseActivationLimit": 3,
+        "createdVia": "api",
+        "urls": {
+          "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+          "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+          "embed": "https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f"
+        },
+        "createdAt": "2026-07-01T09:30:00.000Z"
+      }
+    ],
+    "nextCursor": "MjAyNi0wNy0wMVQwOTozMDowMC4wMDBafDNmNmY0YTNl"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
+
+### POST /api/v1/products — Create a product
+
+operationId: `createProduct` · scope `write:products`
+
+Accepts priceCents (preferred, integer minor units) or the deprecated
+dollar `price`. A product cannot be created directly as `active`
+without at least one downloadable file — create a draft, attach files,
+then publish. Stores with 0 completed sales get `pending_review`
+instead of `active` (first-sale trust gate). Daily cap 20 products/key.
+Provenance is recorded as createdVia="api".
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "name": "Notion Startup OS",
+  "description": "A complete startup operating system for Notion — hiring, fundraising, OKRs.",
+  "shortDescription": "Run your startup from one Notion workspace.",
+  "priceCents": 2900,
+  "compareAtPriceCents": 4900,
+  "categoryId": "8a3d2b1c-5e6f-4a7b-9c8d-0e1f2a3b4c5d",
+  "tags": [
+    "notion",
+    "template"
+  ],
+  "status": "draft",
+  "licenseKeysEnabled": true,
+  "licenseActivationLimit": 3,
+  "images": [
+    {
+      "url": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
+      "altText": "Dashboard preview"
+    }
+  ],
+  "files": [
+    {
+      "fileUrl": "https://cdn.getly.store/files/user-uuid/xyz789.zip",
+      "fileName": "notion-startup-os.zip",
+      "fileSize": 1048576,
+      "fileType": "application/zip"
+    }
+  ]
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "name": "Notion Startup OS",
+    "slug": "notion-startup-os-lx2a9f",
+    "priceCents": 2900,
+    "compareAtPriceCents": 4900,
+    "status": "draft",
+    "licenseKeysEnabled": true,
+    "licenseActivationLimit": 3,
+    "createdVia": "api",
+    "attachedFiles": 1,
+    "urls": {
+      "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "embed": "https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f"
+    }
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `publish_requires_file`, `quota_exceeded`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/products/{id} — Get a product (with images, files metadata, category, latest reviews)
+
+operationId: `getProduct` · scope `read:products`
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "name": "Notion Startup OS",
+    "slug": "notion-startup-os-lx2a9f",
+    "priceCents": 2900,
+    "compareAtPriceCents": null,
+    "status": "active",
+    "licenseKeysEnabled": true,
+    "licenseActivationLimit": 3,
+    "images": [
+      {
+        "url": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
+        "altText": "Dashboard preview",
+        "sortOrder": 0
+      }
+    ],
+    "files": [
+      {
+        "id": "5c1d2e3f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+        "fileName": "notion-startup-os.zip",
+        "fileSize": 1048576,
+        "fileType": "application/zip",
+        "version": "1.0",
+        "isLatest": true
+      }
+    ],
+    "urls": {
+      "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "embed": "https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f"
+    }
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### PATCH /api/v1/products/{id} — Update a product
+
+operationId: `updateProduct` · scope `write:products`
+
+Updatable: name, description, shortDescription, status (active/draft/
+archived only), categoryId, tags, priceCents, compareAtPriceCents,
+licenseKeysEnabled, licenseActivationLimit, images (full replacement).
+Setting status "active" requires at least one downloadable file, and a
+product in pending_review/rejected cannot be self-published
+(moderation_locked). Providing `images` replaces the whole set.
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+
+Request body example:
+
+```json
+{
+  "priceCents": 1900,
+  "status": "active"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "name": "Notion Startup OS",
+    "slug": "notion-startup-os-lx2a9f",
+    "priceCents": 1900,
+    "status": "active",
+    "licenseKeysEnabled": true,
+    "licenseActivationLimit": 3,
+    "urls": {
+      "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "embed": "https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f"
+    }
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `publish_requires_file`, `moderation_locked`, `rate_limited`.
+
+### DELETE /api/v1/products/{id} — Archive a product (soft delete)
+
+operationId: `archiveProduct` · scope `write:products`
+
+Sets status to "archived". Not a hard delete — existing orders and downloads keep working. Archiving an already-archived product succeeds.
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "status": "archived"
+  },
+  "message": "Product archived"
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### POST /api/v1/products/{id}/publish — Publish a product (one call, machine-readable blockers)
+
+operationId: `publishProduct` · scope `write:products`
+
+Flips the product to "active". On failure returns 422 with code
+not_publishable and a `reasons` array — each entry has a machine
+`code` (missing_file | moderation_locked | already_active) and a
+`detail` explaining what to do. Stores with 0 completed sales get
+pending_review instead of active (first-sale trust gate).
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "slug": "notion-startup-os-lx2a9f",
+    "status": "active",
+    "priceCents": 2900,
+    "urls": {
+      "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "embed": "https://www.getly.store/embed/product/3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f"
+    }
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `not_publishable`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/products/{id}/files — List downloadable files attached to a product
+
+operationId: `listProductFiles` · scope `read:products`
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "5c1d2e3f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+      "fileName": "notion-startup-os.zip",
+      "fileUrl": "https://cdn.getly.store/files/user-uuid/xyz789.zip",
+      "fileSize": 1048576,
+      "fileType": "application/zip",
+      "version": "1.0",
+      "isLatest": true,
+      "createdAt": "2026-07-01T09:30:00.000Z"
+    }
+  ]
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### POST /api/v1/products/{id}/files — Attach a downloadable file to a product
+
+operationId: `attachProductFile` · scope `write:products`
+
+Two modes. (A) multipart/form-data with a `file` part — uploaded
+server-side (max 2GB, dangerous extensions blocked). (B) application/json
+`{ fileUrl, fileName, fileSize, fileType?, versionNotes? }` — attaches an
+object previously uploaded through the presign flow; fileUrl must be a
+URL this API issued for YOUR store (files/<yourUserId>/ prefix).
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "fileUrl": "https://cdn.getly.store/files/user-uuid/xyz789.zip",
+  "fileName": "notion-startup-os.zip",
+  "fileSize": 1048576,
+  "fileType": "application/zip",
+  "versionNotes": "Initial release"
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "5c1d2e3f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+    "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "fileName": "notion-startup-os.zip",
+    "fileUrl": "https://cdn.getly.store/files/user-uuid/xyz789.zip",
+    "fileSize": 1048576,
+    "fileType": "application/zip",
+    "isLatest": true,
+    "createdAt": "2026-07-01T09:35:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### POST /api/v1/products/{id}/files/presign — Get a presigned upload URL for a large product file
+
+operationId: `presignProductFile` · scope `write:products`
+
+3-step upload flow for files up to 2GB:
+1. POST here with { fileName, fileSize, fileType? } → { uploadUrl, fileUrl, key }.
+2. PUT the raw bytes to `uploadUrl` (expires in 1h). Content-Length is
+   part of the signature — you must send exactly `fileSize` bytes.
+3. POST /api/v1/products/{id}/files (JSON mode) with { fileUrl, fileName,
+   fileSize, fileType } to attach the uploaded object.
+Objects never attached are garbage-collected after ~24h.
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "fileName": "notion-startup-os.zip",
+  "fileSize": 1048576,
+  "fileType": "application/zip"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "uploadUrl": "https://accountid.r2.cloudflarestorage.com/bucket/files/user-uuid/xyz789.zip?X-Amz-Signature=...",
+    "fileUrl": "https://cdn.getly.store/files/user-uuid/xyz789.zip",
+    "key": "files/user-uuid/xyz789.zip",
+    "fileName": "notion-startup-os.zip",
+    "fileSize": 1048576
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### POST /api/v1/uploads/images/presign — Get a presigned upload URL for an image (product images / post covers)
+
+operationId: `presignImageUpload` · scope `write:products`
+
+Same 3-step flow as file presign, image-scoped (max 10MB; fileType
+must be image/png, image/jpeg, image/webp, image/gif or image/avif —
+`contentType` is accepted as a legacy alias):
+1. POST here { fileSize, fileType } → { uploadUrl, publicUrl, expiresIn }.
+2. PUT the raw bytes to `uploadUrl` (Content-Length must equal fileSize).
+3. Reference `publicUrl` in a product `images[]` entry or a post
+   `coverImageUrl`. Never-attached objects are garbage-collected after ~24h.
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "fileName": "cover.webp",
+  "fileSize": 204800,
+  "fileType": "image/webp"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "uploadUrl": "https://accountid.r2.cloudflarestorage.com/bucket/images/api/store-uuid/abc123.webp?X-Amz-Signature=...",
+    "publicUrl": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
+    "expiresIn": 3600
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/posts — List your store's blog posts (cursor pagination)
+
+operationId: `listPosts` · scope `read:posts`
+
+Parameters:
+- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+- `limit` (query) — Page size, 1-100 (default 20).
+- `status` (query) — Filter by status — draft or published.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+        "storeId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "title": "How I built my template business",
+        "slug": "how-i-built-my-template-business",
+        "excerpt": "Lessons from selling 500 copies.",
+        "contentMarkdown": "## The start...",
+        "contentHtml": "<h2>The start...</h2>",
+        "coverImageUrl": "https://cdn.getly.store/images/api/store-uuid/cover.webp",
+        "visibility": "public",
+        "status": "published",
+        "createdVia": "api",
+        "publishedAt": "2026-07-01T10:00:00.000Z",
+        "createdAt": "2026-07-01T10:00:00.000Z",
+        "updatedAt": "2026-07-01T10:00:00.000Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
+
+### POST /api/v1/posts — Create a blog post (markdown)
+
+operationId: `createPost` · scope `write:posts`
+
+Markdown is the source of truth (contentMarkdown, ≤100KB). A `[product:slug]`
+shortcode renders as a product card with a buy button on the public post
+page. Slug auto-derives from the title (override with `slug`); per-store
+collisions get a -2/-3 suffix. Daily cap 5 posts/key (quota_exceeded).
+Cover images hosted outside Getly storage are accepted with a warning.
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "title": "How I built my template business",
+  "contentMarkdown": "## The start\n\nI shipped my first template in a weekend.\n\n[product:notion-startup-os-lx2a9f]",
+  "excerpt": "Lessons from selling 500 copies.",
+  "coverImageUrl": "https://cdn.getly.store/images/api/store-uuid/cover.webp",
+  "status": "published"
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+    "title": "How I built my template business",
+    "slug": "how-i-built-my-template-business",
+    "excerpt": "Lessons from selling 500 copies.",
+    "contentMarkdown": "## The start...",
+    "contentHtml": "<h2>The start...</h2>",
+    "coverImageUrl": "https://cdn.getly.store/images/api/store-uuid/cover.webp",
+    "visibility": "public",
+    "status": "published",
+    "createdVia": "api",
+    "publishedAt": "2026-07-01T10:00:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `quota_exceeded`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/posts/{id} — Get a blog post
+
+operationId: `getPost` · scope `read:posts`
+
+Parameters:
+- `id` (path, required) — Post id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+    "title": "How I built my template business",
+    "slug": "how-i-built-my-template-business",
+    "contentMarkdown": "## The start...",
+    "contentHtml": "<h2>The start...</h2>",
+    "status": "published",
+    "publishedAt": "2026-07-01T10:00:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### PATCH /api/v1/posts/{id} — Update a blog post
+
+operationId: `updatePost` · scope `write:posts`
+
+Updatable — title, contentMarkdown, status (draft/published; publishedAt is set on first publish and kept stable), excerpt (null clears), coverImageUrl (null clears), slug.
+
+Parameters:
+- `id` (path, required) — Post id (uuid).
+
+Request body example:
+
+```json
+{
+  "status": "published",
+  "excerpt": "Updated excerpt."
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+    "title": "How I built my template business",
+    "status": "published",
+    "excerpt": "Updated excerpt.",
+    "publishedAt": "2026-07-01T10:00:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
+
+### DELETE /api/v1/posts/{id} — Delete a blog post (hard delete)
+
+operationId: `deletePost` · scope `write:posts`
+
+Parameters:
+- `id` (path, required) — Post id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "9d8c7b6a-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+    "deleted": true
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### GET /api/v1/coupons — List your store's coupons (cursor pagination)
+
+operationId: `listCoupons` · scope `read:coupons`
+
+Parameters:
+- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+- `limit` (query) — Page size, 1-100 (default 20).
+- `active` (query) — Filter by isActive — "true" or "false".
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+        "storeId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "code": "LAUNCH20",
+        "type": "percentage",
+        "value": 20,
+        "minOrderAmount": 0,
+        "minOrderAmountCents": 0,
+        "maxUses": 100,
+        "usedCount": 3,
+        "isActive": true,
+        "expiresAt": "2026-08-01T23:59:59.000Z",
+        "createdAt": "2026-07-01T10:00:00.000Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
+
+### POST /api/v1/coupons — Create a coupon
+
+operationId: `createCoupon` · scope `write:coupons`
+
+code — 3-50 chars, A-Z 0-9 dashes, unique per store (uppercased).
+type "percentage" (value 1-100) or "fixed" (value/valueCents in cents).
+Percentage discounts of 90%+ require acknowledgeHighDiscount:true
+(error high_discount_ack_required). Daily cap 30 coupons/key.
+code, type and value are immutable after creation.
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "code": "LAUNCH20",
+  "type": "percentage",
+  "value": 20,
+  "minOrderAmountCents": 0,
+  "maxUses": 100,
+  "expiresAt": "2026-08-01"
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+    "code": "LAUNCH20",
+    "type": "percentage",
+    "value": 20,
+    "minOrderAmountCents": 0,
+    "maxUses": 100,
+    "usedCount": 0,
+    "isActive": true,
+    "expiresAt": "2026-08-01T23:59:59.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `high_discount_ack_required`, `quota_exceeded`, `idempotency_conflict`, `rate_limited`.
+
+### PATCH /api/v1/coupons/{id} — Update a coupon (isActive, expiresAt, maxUses only)
+
+operationId: `updateCoupon` · scope `write:coupons`
+
+code, type and value are immutable — mutating a live discount silently changes already-shared codes. Create a new coupon and deactivate the old one instead.
+
+Parameters:
+- `id` (path, required) — Coupon id (uuid).
+
+Request body example:
+
+```json
+{
+  "isActive": false
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+    "code": "LAUNCH20",
+    "type": "percentage",
+    "value": 20,
+    "isActive": false
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
+
+### DELETE /api/v1/coupons/{id} — Delete a never-used coupon
+
+operationId: `deleteCoupon` · scope `write:coupons`
+
+Coupons with usedCount > 0 cannot be deleted (orders reference them) — returns 409; deactivate via PATCH isActive:false instead.
+
+Parameters:
+- `id` (path, required) — Coupon id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": true,
+    "id": "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
+
+### GET /api/v1/checkout-links — List your checkout links (cursor pagination)
+
+operationId: `listCheckoutLinks` · scope `checkout:create`
+
+Parameters:
+- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+- `limit` (query) — Page size, 1-100 (default 20).
+- `status` (query) — Filter — open, completed or expired.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+        "url": "https://www.getly.store/go/4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+        "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+        "status": "open",
+        "reference": "customer-42",
+        "metadata": {
+          "chatId": "12345"
+        },
+        "orderId": null,
+        "expiresAt": "2026-07-11T09:30:00.000Z",
+        "createdAt": "2026-07-04T09:30:00.000Z",
+        "completedAt": null,
+        "currency": "USD"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
+
+### POST /api/v1/checkout-links — Create an instant checkout link for one product
+
+operationId: `createCheckoutLink` · scope `checkout:create`
+
+Returns a shareable https://www.getly.store/go/{id} URL. The product must
+be active and owned by your store. An optional coupon is auto-applied at
+checkout (no code typing) and re-validated at click time. `reference`
+(≤200 chars) and `metadata` (≤20 string entries, ≤2KB) are echoed into
+the sale.completed / checkout_link.completed webhooks. Naturally
+idempotent: an open, unexpired link with the same product + coupon +
+reference is returned (200) instead of minting a new one (201).
+Default expiry 7 days (expiresInHours 1-720). The Stripe session is
+created lazily at click time, never here.
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+  "couponCode": "LAUNCH20",
+  "reference": "customer-42",
+  "metadata": {
+    "chatId": "12345"
+  },
+  "expiresInHours": 168
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+    "url": "https://www.getly.store/go/4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+    "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "status": "open",
+    "reference": "customer-42",
+    "metadata": {
+      "chatId": "12345"
+    },
+    "orderId": null,
+    "expiresAt": "2026-07-11T09:30:00.000Z",
+    "createdAt": "2026-07-04T09:30:00.000Z",
+    "completedAt": null,
+    "currency": "USD",
+    "priceCents": 2900,
+    "discountedPriceCents": 2320,
+    "couponApplied": true
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `not_found`, `coupon_invalid`, `not_publishable`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/checkout-links/{id} — Poll a checkout link's status
+
+operationId: `getCheckoutLink` · scope `checkout:create`
+
+For bots without a public webhook URL — status is open, completed (then orderId is set) or expired.
+
+Parameters:
+- `id` (path, required) — Checkout link id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+    "url": "https://www.getly.store/go/4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+    "status": "completed",
+    "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "reference": "customer-42",
+    "metadata": {
+      "chatId": "12345"
+    },
+    "orderId": "6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+    "expiresAt": "2026-07-11T09:30:00.000Z",
+    "completedAt": "2026-07-04T11:02:33.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `not_found`, `rate_limited`.
+
+### GET /go/{linkId} — Public checkout-link redirect (buyer-facing)
+
+operationId: `redirectCheckoutLink` · Public (no auth required)
+
+NO auth — this is the URL you hand to buyers. Validates the link at
+click time (product still active, seller not suspended, coupon still
+valid), lazily creates the Stripe Checkout Session and 302-redirects
+the buyer into payment with the coupon auto-applied. Stale/expired/
+completed links redirect to the product page (full-price purchase stays
+possible) — never a dead end. Per-IP velocity limited.
+
+Parameters:
+- `linkId` (path, required) — Checkout link id (uuid) from createCheckoutLink.
+
+Response (HTTP 302): Redirect to Stripe Checkout (happy path), or to the product page / homepage for stale links.
+
+### GET /api/v1/licenses — List license keys issued for your products (cursor pagination)
+
+operationId: `listLicenses` · scope `read:licenses`
+
+Parameters:
+- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+- `limit` (query) — Page size, 1-100 (default 20).
+- `productId` (query) — Filter by one of your products (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "7f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+        "key": "GETLY-A1B2-C3D4-E5F6-A7B8",
+        "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+        "status": "active",
+        "activationLimit": 3,
+        "activationCount": 1,
+        "activations": [
+          {
+            "fingerprint": "machine-7f3b",
+            "label": "Work laptop",
+            "activatedAt": "2026-07-02T08:00:00.000Z"
+          }
+        ],
+        "createdAt": "2026-07-01T12:00:00.000Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### POST /api/v1/licenses/validate — Validate a license key (PUBLIC, no auth)
+
+operationId: `validateLicense` · Public (no auth required)
+
+Call this from your shipped software to check a buyer's license. NO
+auth header needed; rate-limited per IP (30/min). Every negative case
+returns the same `{ valid: false }` (no oracle). Optionally pin the
+check to a productId.
+
+Request body example:
+
+```json
+{
+  "key": "GETLY-A1B2-C3D4-E5F6-A7B8",
+  "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "valid": true,
+    "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "status": "active",
+    "activationLimit": 3,
+    "activationCount": 1,
+    "activationsRemaining": 2
+  }
+}
+```
+
+Errors: `validation_failed`, `rate_limited`.
+
+### POST /api/v1/licenses/activate — Activate a license on a device (PUBLIC, no auth)
+
+operationId: `activateLicense` · Public (no auth required)
+
+Claims an activation seat for a device/install. Idempotent per
+fingerprint — re-activating an already-active fingerprint succeeds
+without consuming a seat. fingerprint is any stable device/install
+identifier (1-200 chars); label is an optional human name. Fires the
+license.activated webhook to the product's store. Rate-limited per IP.
+
+Request body example:
+
+```json
+{
+  "key": "GETLY-A1B2-C3D4-E5F6-A7B8",
+  "fingerprint": "machine-7f3b",
+  "label": "Work laptop"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "activated": true,
+    "alreadyActive": false,
+    "activationsRemaining": 2
+  }
+}
+```
+
+Errors: `validation_failed`, `license_invalid`, `activation_limit_reached`, `rate_limited`.
+
+### POST /api/v1/licenses/deactivate — Deactivate a license on a device (PUBLIC, no auth)
+
+operationId: `deactivateLicense` · Public (no auth required)
+
+Releases an activation seat (device decommissioned / reinstall). Idempotent — deactivating a fingerprint that is not active succeeds as a no-op (wasActive false). Rate-limited per IP.
+
+Request body example:
+
+```json
+{
+  "key": "GETLY-A1B2-C3D4-E5F6-A7B8",
+  "fingerprint": "machine-7f3b"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "deactivated": true,
+    "wasActive": true,
+    "activationsRemaining": 3
+  }
+}
+```
+
+Errors: `validation_failed`, `license_invalid`, `rate_limited`.
+
+### GET /api/v1/webhook-endpoints — List webhook endpoints (secret never returned)
+
+operationId: `listWebhookEndpoints` · scope `webhooks:manage`
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
+        "storeId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "url": "https://example.com/webhooks/getly",
+        "events": [
+          "sale.completed",
+          "checkout_link.completed"
+        ],
+        "isActive": true,
+        "createdAt": "2026-07-01T10:00:00.000Z",
+        "updatedAt": "2026-07-01T10:00:00.000Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
+
+### POST /api/v1/webhook-endpoints — Register a webhook endpoint
+
+operationId: `createWebhookEndpoint` · scope `webhooks:manage`
+
+url must be a public https address (private/internal IPs rejected —
+SSRF guard). events is a non-empty array of event types, or ["*"] for
+everything. The HMAC `secret` is returned EXACTLY ONCE in this response
+— store it immediately; it cannot be retrieved again. See the
+x-webhooks section for the signature scheme (X-Getly-Signature-V2,
+300s tolerance).
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "url": "https://example.com/webhooks/getly",
+  "events": [
+    "sale.completed",
+    "checkout_link.completed",
+    "license.activated"
+  ]
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
+    "storeId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "url": "https://example.com/webhooks/getly",
+    "events": [
+      "sale.completed",
+      "checkout_link.completed",
+      "license.activated"
+    ],
+    "isActive": true,
+    "createdAt": "2026-07-04T10:00:00.000Z",
+    "secret": "whsec_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### PATCH /api/v1/webhook-endpoints/{id} — Update a webhook endpoint (url, events, isActive)
+
+operationId: `updateWebhookEndpoint` · scope `webhooks:manage`
+
+Parameters:
+- `id` (path, required) — Webhook endpoint id (uuid).
+
+Request body example:
+
+```json
+{
+  "isActive": false
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
+    "storeId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "url": "https://example.com/webhooks/getly",
+    "events": [
+      "sale.completed"
+    ],
+    "isActive": false,
+    "updatedAt": "2026-07-04T12:00:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
+
+### DELETE /api/v1/webhook-endpoints/{id} — Delete a webhook endpoint
+
+operationId: `deleteWebhookEndpoint` · scope `webhooks:manage`
+
+Parameters:
+- `id` (path, required) — Webhook endpoint id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
+    "deleted": true
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### GET /api/v1/public/stores/{slug}/products — List a store's active products (PUBLIC, no auth)
+
+operationId: `listPublicStoreProducts` · Public (no auth required)
+
+Load-bearing for the storefront widget. NO auth; CORS *; CDN-cached
+(s-maxage=300). Only active products of non-suspended sellers; a missing
+or suspended store reads as 404. Cursor pagination. Rate-limited per IP.
+
+Parameters:
+- `slug` (path, required) — Store slug.
+- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
+- `limit` (query) — Page size, 1-100 (default 20).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "store": {
+      "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "name": "Maker Studio",
+      "slug": "maker-studio"
+    },
+    "items": [
+      {
+        "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+        "slug": "notion-startup-os-lx2a9f",
+        "name": "Notion Startup OS",
+        "shortDescription": "Run your startup from one Notion workspace.",
+        "priceCents": 2900,
+        "price": 2900,
+        "currency": "USD",
+        "avgRating": 4.8,
+        "reviewCount": 12,
+        "images": [
+          {
+            "url": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
+            "altText": "Dashboard preview"
+          }
+        ],
+        "urls": {
+          "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+          "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f"
+        }
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Errors: `not_found`, `validation_failed`, `rate_limited`.
+
+### GET /api/v1/public/stores/{slug}/products/{productSlug} — Get one active product of a store (PUBLIC, no auth)
+
+operationId: `getPublicStoreProduct` · Public (no auth required)
+
+Same shape as the public list plus full description fields. Non-active products (draft/pending/rejected/archived) read as 404. CDN-cached (s-maxage=300).
+
+Parameters:
+- `slug` (path, required) — Store slug.
+- `productSlug` (path, required) — Product slug.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+    "slug": "notion-startup-os-lx2a9f",
+    "name": "Notion Startup OS",
+    "shortDescription": "Run your startup from one Notion workspace.",
+    "description": "A complete startup operating system for Notion — hiring, fundraising, OKRs.",
+    "priceCents": 2900,
+    "price": 2900,
+    "currency": "USD",
+    "avgRating": 4.8,
+    "reviewCount": 12,
+    "images": [
+      {
+        "url": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
+        "altText": "Dashboard preview"
+      }
+    ],
+    "urls": {
+      "product": "https://www.getly.store/product/notion-startup-os-lx2a9f",
+      "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f"
+    }
+  }
+}
+```
+
+Errors: `not_found`, `rate_limited`.
+
+### GET /api/v1/store — Get your store profile
+
+operationId: `getStore` · scope `read:store`
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "name": "Maker Studio",
+    "slug": "maker-studio",
+    "description": "Templates and tools for makers.",
+    "website": "https://maker.studio",
+    "commissionPercent": 90,
+    "badges": [],
+    "createdAt": "2026-07-01T09:00:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### POST /api/v1/store — Create a store (one per user)
+
+operationId: `createStore` · scope `write:store`
+
+Creates the store for the key's user if none exists (409 otherwise —
+keys are store-bound, one store per user). Slug normalizes to a-z 0-9
+dashes; omit it to auto-generate a unique one from the name. New stores
+get the early-seller promo (90% revenue share for 90 days) and the user
+role is bumped to seller.
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "name": "Maker Studio",
+  "slug": "maker-studio",
+  "description": "Templates and tools for makers."
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "name": "Maker Studio",
+    "slug": "maker-studio",
+    "commissionPercent": 90,
+    "createdAt": "2026-07-04T09:00:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### PATCH /api/v1/store — Update your store profile
+
+operationId: `updateStore` · scope `write:store`
+
+Updatable — name (1-100 chars), description (≤5000), website (http/https URL), socialLinks (object).
+
+Request body example:
+
+```json
+{
+  "description": "Templates and tools for indie makers.",
+  "website": "https://maker.studio"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "name": "Maker Studio",
+    "description": "Templates and tools for indie makers.",
+    "website": "https://maker.studio"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
+
+### POST /api/v1/store/payout-onboarding — Get a Stripe Connect payout-onboarding link
+
+operationId: `createPayoutOnboardingLink` · scope `write:store`
+
+Creates (or reuses) the Stripe Connect Express account for the key's
+user and returns a fresh onboarding account-link URL. The URL is
+short-lived — send the seller there promptly. This is one of the few
+steps that must finish in a browser (Stripe identity collection).
+
+Parameters:
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://connect.stripe.com/setup/e/acct_123/abcdef",
+    "expiresAt": "2026-07-04T10:05:00.000Z"
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/payouts — Read-only money snapshot (balances, upcoming payouts)
+
+operationId: `getPayouts` · scope `read:store`
+
+Requires read:store OR read:analytics. Same single source of truth as
+the dashboard payouts page, reconciled with the 1st/15th payout cron.
+All amounts are integer cents. `method` per upcoming payout is stripe
+or crypto depending on the seller's payout preference.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "period": {
+      "start": "2026-07-01T00:00:00.000Z",
+      "end": "2026-07-31T23:59:59.000Z"
+    },
+    "balances": {
+      "pendingCents": 15200,
+      "belowMinimumHeldCents": 0,
+      "proPoolHeldCents": 0,
+      "proPoolPendingCents": 0
+    },
+    "thisPeriod": {
+      "incomeCents": 8700,
+      "expensesCents": 0,
+      "netCents": 8700
+    },
+    "lifetime": {
+      "incomeCents": 45200,
+      "paidOutCents": 30000,
+      "pendingCents": 15200
+    },
+    "upcomingPayouts": [
+      {
+        "date": "2026-07-15T03:00:00.000Z",
+        "amountCents": 15200,
+        "method": "stripe"
+      },
+      {
+        "date": "2026-08-01T03:00:00.000Z",
+        "amountCents": 0,
+        "method": "stripe"
+      },
+      {
+        "date": "2026-08-15T03:00:00.000Z",
+        "amountCents": 0,
+        "method": "stripe"
+      }
+    ],
+    "payoutMethod": "stripe",
+    "minPayoutCents": 1000,
+    "cryptoWalletIncomplete": false
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
+
+### GET /api/v1/orders — List your store's order items (legacy page/limit pagination)
+
+operationId: `listOrders` · scope `read:orders`
+
+NOTE — this endpoint uses legacy offset pagination (?page from 1,
+?limit 1-50), NOT cursors. Returns order items of your store with the
+parent order and product; buyer email is never included. price,
+sellerAmount and platformAmount are integer cents.
+
+Parameters:
+- `page` (query) — Page number, from 1.
+- `limit` (query) — Items per page, 1-50 (default 20).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "5b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
+      "orderId": "6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+      "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+      "price": 2900,
+      "sellerAmount": 2320,
+      "platformAmount": 580,
+      "licenseType": "personal",
+      "createdAt": "2026-07-04T11:02:33.000Z",
+      "order": {
+        "id": "6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+        "status": "completed",
+        "buyer": {
+          "id": "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+          "name": "Jane Buyer"
+        }
+      },
+      "product": {
+        "id": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+        "name": "Notion Startup OS",
+        "slug": "notion-startup-os-lx2a9f"
+      }
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20,
+  "hasMore": false
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
+
+### GET /api/v1/orders/{id} — Get an order (items filtered to your store)
+
+operationId: `getOrder` · scope `read:orders`
+
+403 when the order contains no items from your store. Buyer email is never included. total and item amounts are integer cents.
+
+Parameters:
+- `id` (path, required) — Order id (uuid).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+    "buyerId": "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+    "buyer": {
+      "id": "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+      "name": "Jane Buyer"
+    },
+    "status": "completed",
+    "total": 2900,
+    "createdAt": "2026-07-04T11:02:33.000Z",
+    "items": [
+      {
+        "id": "5b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
+        "productId": "3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f",
+        "price": 2900,
+        "sellerAmount": 2320,
+        "platformAmount": 580
+      }
+    ]
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
+
+### GET /api/v1/analytics — Sales analytics for your store
+
+operationId: `getAnalytics` · scope `read:analytics`
+
+Revenue figures are your seller share in integer cents; salesByMonth covers the last 6 months.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalSales": 42,
+    "totalRevenue": 97400,
+    "monthlySales": 5,
+    "monthlyRevenue": 11600,
+    "averageOrderValue": 2319,
+    "productCount": 7,
+    "totalDownloads": 156,
+    "salesByMonth": [
+      {
+        "month": "2026-06",
+        "sales": 12,
+        "revenue": 27840
+      },
+      {
+        "month": "2026-07",
+        "sales": 5,
+        "revenue": 11600
+      }
+    ]
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.

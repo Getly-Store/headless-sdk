@@ -14,7 +14,8 @@
 import { readFile, stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { z, type ZodRawShape } from 'zod';
-import { apiRequest, getApiKey, getBaseUrl, putPresigned, GetlyApiError } from './api.js';
+import { GetlyError, type ImageContentType } from '@getly/sdk';
+import { apiRequest, getApiKey, getBaseUrl, getClient, GetlyApiError } from './api.js';
 import { searchCategories } from './categories.js';
 
 // ---------------------------------------------------------------------------
@@ -66,7 +67,11 @@ export const MISSING_KEY_MESSAGE = [
 ].join('\n');
 
 function formatApiError(err: unknown): ToolResult {
-  if (err instanceof GetlyApiError) {
+  // GetlyApiError (this package's thin client) and GetlyError (@getly/sdk)
+  // carry the same platform error envelope — format them identically.
+  if (err instanceof GetlyApiError || err instanceof GetlyError) {
+    const retryAfterSeconds =
+      err instanceof GetlyError ? err.rateLimit.retryAfterSeconds : err.retryAfterSeconds;
     const lines = [`Getly API error \`${err.code}\` (HTTP ${err.status}): ${err.message}`];
     if (err.param) lines.push(`Field: ${err.param}`);
     if (err.hint) lines.push(`Hint: ${err.hint}`);
@@ -74,7 +79,7 @@ function formatApiError(err: unknown): ToolResult {
       lines.push('Blockers:');
       for (const r of err.reasons) lines.push(`- ${r.code}: ${r.detail}`);
     }
-    if (err.retryAfterSeconds) lines.push(`Retry after ${err.retryAfterSeconds}s.`);
+    if (retryAfterSeconds) lines.push(`Retry after ${retryAfterSeconds}s.`);
     if (err.docsUrl) lines.push(`Docs: ${err.docsUrl}`);
     return { content: [{ type: 'text', text: lines.join('\n') }], isError: true };
   }
@@ -149,7 +154,7 @@ function projectProduct(p: V1ProductLike) {
   };
 }
 
-const IMAGE_TYPES: Record<string, string> = {
+const IMAGE_TYPES: Record<string, ImageContentType> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -373,35 +378,19 @@ export const TOOLS: GetlyTool[] = [
       const info = await stat(filePath).catch(() => null);
       if (!info?.isFile()) return refusal(`File not found (or not a regular file): ${filePath}`);
       const fileName = basename(filePath);
-      const fileSize = info.size;
       const fileType = (args.fileType as string | undefined) || 'application/octet-stream';
 
-      // 1) presign
-      const presign = await apiRequest<{ uploadUrl: string; fileUrl: string }>(
-        `api/v1/products/${args.productId}/files/presign`,
-        { method: 'POST', idempotent: true, body: { fileName, fileSize, fileType } },
-      );
-      // 2) PUT the bytes (Content-Type/Length are part of the signature)
+      // @getly/sdk one-call flow: presign → PUT the bytes → attach.
       const bytes = await readFile(filePath);
-      await putPresigned(presign.data.uploadUrl, bytes, fileType);
-      // 3) attach
-      const attach = await apiRequest<Record<string, unknown>>(
-        `api/v1/products/${args.productId}/files`,
-        {
-          method: 'POST',
-          idempotent: true,
-          body: {
-            fileUrl: presign.data.fileUrl,
-            fileName,
-            fileSize,
-            fileType,
-            versionNotes: args.versionNotes,
-          },
-        },
-      );
+      const file = await getClient().products.uploadFile(String(args.productId), {
+        fileName,
+        data: bytes,
+        fileType,
+        versionNotes: args.versionNotes as string | undefined,
+      });
       return json({
-        result: `Attached "${fileName}" (${fileSize} bytes) to the product.`,
-        file: attach.data,
+        result: `Attached "${fileName}" (${info.size} bytes) to the product.`,
+        file,
       });
     }),
   },
@@ -425,18 +414,15 @@ export const TOOLS: GetlyTool[] = [
       if (!info?.isFile()) return refusal(`File not found (or not a regular file): ${filePath}`);
       if (info.size > 10 * 1024 * 1024) return refusal('Image too large — max 10MB.');
 
-      const presign = await apiRequest<{ uploadUrl: string; publicUrl: string }>(
-        'api/v1/uploads/images/presign',
-        {
-          method: 'POST',
-          idempotent: true,
-          body: { fileName: basename(filePath), fileSize: info.size, contentType },
-        },
-      );
+      // @getly/sdk one-call flow: presignImage → PUT the bytes.
       const bytes = await readFile(filePath);
-      await putPresigned(presign.data.uploadUrl, bytes, contentType);
+      const { publicUrl } = await getClient().uploads.uploadImage({
+        data: bytes,
+        contentType,
+        fileName: basename(filePath),
+      });
       return json({
-        url: presign.data.publicUrl,
+        url: publicUrl,
         note: 'Use this URL as a product image or a blog post cover within 24 hours, or it will be garbage-collected.',
       });
     }),

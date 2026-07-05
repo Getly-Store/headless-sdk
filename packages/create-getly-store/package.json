@@ -1,0 +1,38 @@
+{
+  "name": "create-getly-store",
+  "version": "0.1.0",
+  "description": "Scaffold a minimal, beautiful Next.js storefront powered by the Getly public API.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Getly-Store/headless-sdk.git",
+    "directory": "packages/create-getly-store"
+  },
+  "homepage": "https://www.getly.store/developers",
+  "keywords": ["getly", "create", "storefront", "nextjs", "digital-products"],
+  "bin": {
+    "create-getly-store": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "template", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0"
+  }
+}

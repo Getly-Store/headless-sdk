@@ -199,15 +199,17 @@ export class HttpClient {
 
 /** Byte length of any uploadable body. */
 export function byteLength(data: Uint8Array | ArrayBuffer | Blob): number {
-  if (typeof Blob !== 'undefined' && data instanceof Blob) return data.size;
+  if (data instanceof Blob) return data.size;
   if (data instanceof ArrayBuffer) return data.byteLength;
   return data.byteLength;
 }
 
 /** Normalize an uploadable body into something fetch accepts as BodyInit. */
 export function toBodyInit(data: Uint8Array | ArrayBuffer | Blob): BodyInit {
-  if (typeof Blob !== 'undefined' && data instanceof Blob) return data;
+  if (data instanceof Blob) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  // Re-wrap so a Node Buffer is sent as a plain Uint8Array view.
-  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  // Re-wrap so a Node Buffer is sent as a plain Uint8Array view. The cast is
+  // safe: fetch only reads the bytes (TS 5.9's BodyInit excludes views over
+  // SharedArrayBuffer, which uploads never use in practice).
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength) as Uint8Array<ArrayBuffer>;
 }

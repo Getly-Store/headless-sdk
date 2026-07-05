@@ -56,7 +56,7 @@ putting commerce — real money — behind MCP tools".
 2. **What MCP actually adds** over "the model writes fetch() calls": typed tools,
    annotations (`readOnlyHint`/`destructiveHint`), env-based credentials — the model
    never sees the key, only the tool results.
-3. **The 16 tools and why not 40.** Tool-count restraint as a design decision: every
+3. **The 18 tools and why not 40.** Tool-count restraint as a design decision: every
    tool is a decision point for the model; overlapping tools = wrong-tool calls.
    Table of the tools grouped by products / content / money / config.
 4. **Guardrails for money-touching tools** (the heart of the piece):
@@ -98,7 +98,7 @@ putting commerce — real money — behind MCP tools".
 2. **Архитектура за 5 минут.** Схема: платформа (checkout картой и USDT/USDC,
    доставка файлов, лицензионные ключи, выплаты 1-го и 15-го числа) ↔ REST API v1 ↔
    три клиента: `@getly/sdk` (TypeScript, без зависимостей), `@getly/mcp`
-   (16 инструментов), `npx @getly/auto-store` (герой демо).
+   (18 инструментов), `npx @getly/auto-store` (герой демо).
 3. **Три ручных шага — честно.** Регистрация, создание API-ключа
    (`getly_sk_live_…`, скоупы по принципу минимальных привилегий), подключение
    выплат (Stripe Connect или крипто-кошелёк). Всё остальное — через API.

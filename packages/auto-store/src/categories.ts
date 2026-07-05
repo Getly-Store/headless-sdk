@@ -2,6 +2,9 @@
  * Category resolution: fetches the public category tree
  * (GET /api/categories — { id, name, slug, parentId, children[] }, 3 levels)
  * and fuzzy-matches Claude's free-text `categoryQuery` against it.
+ *
+ * The categories endpoint is public and NOT part of the v1 surface, so it is
+ * fetched directly here rather than through @getly/sdk.
  */
 
 export interface CategoryNode {
@@ -10,6 +13,28 @@ export interface CategoryNode {
   slug: string;
   parentId: string | null;
   children?: CategoryNode[];
+}
+
+/**
+ * Fetch the public category tree ({ success: true, data } envelope).
+ * No auth header — the endpoint is public and the API key must never
+ * travel where it is not required.
+ */
+export async function fetchCategories(
+  baseUrl: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CategoryNode[]> {
+  const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/api/categories`);
+  let json: { success?: boolean; data?: CategoryNode[] } | null = null;
+  try {
+    json = (await res.json()) as { success?: boolean; data?: CategoryNode[] };
+  } catch {
+    json = null;
+  }
+  if (!res.ok || !json?.success || !Array.isArray(json.data)) {
+    throw new Error(`Failed to fetch the category tree (HTTP ${res.status}) from ${baseUrl}/api/categories`);
+  }
+  return json.data;
 }
 
 export interface FlatCategory {

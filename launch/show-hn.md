@@ -25,7 +25,7 @@ https://github.com/Getly-Store/headless-sdk
 
 What's in the repo:
 
-- @getly/mcp — an MCP server with 16 tools (products CRUD + file upload +
+- @getly/mcp — an MCP server with 18 tools (products CRUD + file upload +
   publish, blog posts, coupons, checkout links, license keys, sales stats).
   Works in Claude Code / Claude Desktop / Cursor. Destructive tools require an
   explicit confirm:true argument; there is deliberately no bulk-delete tool; the
