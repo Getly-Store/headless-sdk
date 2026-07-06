@@ -143,6 +143,31 @@ real price after. Never test with real cards.
 - `GET /api/categories` — the 708-category tree (map names → `categoryId`).
 - `POST /api/v1/licenses/validate|activate|deactivate` — license checks from shipped apps.
 - `GET /go/{linkId}` — checkout-link redirect (this IS the pay URL).
+- `POST /api/v1/public/checkout` + `GET /api/v1/public/checkout/{linkId}/status` —
+  the **Pay Widget** mint + poll (what the `pay.js` embed uses).
+
+## Pay Widget — a Buy button for the user's own site
+
+When the user wants to sell a product from **their own** website (landing page,
+Webflow/Framer/Carrd, link-in-bio, quiz funnel) rather than on getly.store, give
+them the embed — NOT an API integration. Use the MCP tool
+`get_pay_widget_code({ productSlug, mode? })`, or hand them this directly:
+
+```html
+<script src="https://www.getly.store/pay.js" async></script>
+<button data-getly-buy data-store="STORE_SLUG" data-product="PRODUCT_SLUG">Buy</button>
+```
+
+- No API key in the browser; no Stripe account for the seller. Card + Apple Pay /
+  Google Pay on the hosted popup automatically.
+- `data-mode`: `auto` (default) / `popup` / `inline` / `redirect`. For a quiz,
+  set `data-product` at runtime then call `window.GetlyPay.scan()`.
+- The script src is UNVERSIONED — never add `integrity=` or `?v=`.
+- **Delivery is server-side.** The `getly:pay:success` browser event is advisory
+  only — NEVER unlock files/keys/content on it (a visitor can forge it). Verify
+  real sales via the `sale.completed` / `checkout_link.completed` webhook.
+- The seller enables it (and, for inline Apple Pay, registers their domain) at
+  `/dashboard/pay-widget`. Full guide: `docs/pay-widget.md`.
 
 ## The 3 human steps you cannot do for the user
 

@@ -1,6 +1,6 @@
 {
   "name": "@getly/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Getly — let Claude, Cursor and other AI assistants run your digital-products store (products, blog, coupons, checkout links, licenses).",
   "license": "MIT",
   "type": "module",

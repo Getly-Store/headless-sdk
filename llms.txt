@@ -94,6 +94,10 @@ Every error response is `{ "success": false, "error": "<message>", "errorDetail"
 - `not_publishable` — Fix every entry in the `reasons` array (each has a machine code and a detail), then call publish again.
 - `idempotency_conflict` — A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
 - `coupon_invalid` — The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
+- `not_purchasable` — The product cannot be sold through the Pay Widget — it must be an active, fixed-price product above $0 (not free or pay-what-you-want). Pick a different product or change its pricing.
+- `widget_disabled` — The store has turned the Pay Widget off (or anti-abuse auto-disabled it). The seller re-enables it at /dashboard/pay-widget.
+- `origin_not_allowed` — The request's Origin is not in the store's domain allowlist. Add the embedding site's domain at /dashboard/pay-widget, or embed only on allowed domains.
+- `challenge_required` — A Cloudflare Turnstile challenge is required. Render the widget with the returned challengeSiteKey and retry with the token — the pay.js embed handles this automatically.
 - `high_discount_ack_required` — Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.
 - `quota_exceeded` — Daily creation cap reached for this API key (products 20/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
 - `expired` — The resource has expired. Create a fresh one.
@@ -1008,6 +1012,81 @@ Parameters:
 - `linkId` (path, required) — Checkout link id (uuid) from createCheckoutLink.
 
 Response (HTTP 302): Redirect to Stripe Checkout (happy path), or to the product page / homepage for stale links.
+
+### POST /api/v1/public/checkout — Mint a Pay Widget checkout (buyer-facing, no auth)
+
+operationId: `createPublicCheckout` · Public (no auth required)
+
+NO auth — this is what the embeddable pay.js Buy button calls from a
+seller's own website. Given a store slug + product slug it mints a
+one-shot checkout for that product and returns either a hosted Stripe
+Checkout url (popup / redirect) or an embedded clientSecret (inline).
+The PRICE IS ALWAYS READ FROM THE PRODUCT ROW — any price the browser
+sends is ignored. Only active, fixed-price (> 0) products of a
+non-suspended seller are sellable; free / pay-what-you-want / unknown
+products return not_purchasable (or a leak-safe not_found). Protected by
+layered anti-abuse: per-IP / per-product / per-origin velocity limits,
+an optional origin allowlist, a per-store kill switch, a concurrent-open
+cap and (for untrusted stores) a Cloudflare Turnstile challenge. You
+normally never call this directly — embed the widget from /pay-widget.
+
+Parameters:
+- `Origin` (header) — The embedding site's origin. Enforced against the store's domain allowlist when the seller has set one.
+
+Request body example:
+
+```json
+{
+  "storeSlug": "acme-studio",
+  "productSlug": "icon-pack-pro",
+  "mode": "popup",
+  "challengeToken": "turnstile-token-when-challenged"
+}
+```
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3",
+    "sessionId": "cs_test_a1b2c3",
+    "linkId": "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+    "priceCents": 2900,
+    "currency": "USD"
+  }
+}
+```
+
+Errors: `validation_failed`, `not_found`, `not_purchasable`, `widget_disabled`, `origin_not_allowed`, `challenge_required`, `rate_limited`.
+
+### GET /api/v1/public/checkout/{linkId}/status — Poll a Pay Widget checkout's status (buyer-facing, no auth)
+
+operationId: `getPublicCheckoutStatus` · Public (no auth required)
+
+NO auth. The embed script polls this to know when to show the success
+state. Returns ONLY a status of open, completed or expired — never the
+order, amount or buyer, so it cannot be used as a conversion oracle.
+Scoped to widget-minted links only (anything else reads as not_found).
+Per-IP rate limited. Delivery is server-side — NEVER unlock content on
+this value; verify real sales via the sale.completed webhook.
+
+Parameters:
+- `linkId` (path, required) — The linkId returned by createPublicCheckout.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "completed"
+  }
+}
+```
+
+Errors: `not_found`, `rate_limited`.
 
 ### GET /api/v1/licenses — List license keys issued for your products (cursor pagination)
 

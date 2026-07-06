@@ -1,6 +1,6 @@
 /**
  * Boot the BUILT server over stdio and drive it with raw JSON-RPC:
- * initialize → notifications/initialized → tools/list. Asserts all 18 tools
+ * initialize → notifications/initialized → tools/list. Asserts all 19 tools
  * are exposed with their annotations. Builds the package first if needed.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -67,7 +67,7 @@ afterAll(() => {
 });
 
 describe('stdio server (built dist)', () => {
-  it('answers initialize and lists all 18 tools with annotations', async () => {
+  it('answers initialize and lists all 19 tools with annotations', async () => {
     const init = await request(1, 'initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
@@ -82,14 +82,14 @@ describe('stdio server (built dist)', () => {
     const list = await request(2, 'tools/list');
     const tools = (list.result as { tools: Array<{ name: string; description?: string; annotations?: Record<string, unknown> }> }).tools;
 
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(19);
     const byName = new Map(tools.map((t) => [t.name, t]));
     for (const name of [
       'list_products', 'get_product', 'create_product', 'update_product',
       'publish_product', 'archive_product', 'upload_product_file', 'upload_image',
       'create_blog_post', 'list_blog_posts', 'create_coupon', 'list_coupons',
       'create_checkout_link', 'get_checkout_link_status', 'list_licenses',
-      'get_sales_stats', 'search_categories', 'get_store',
+      'get_sales_stats', 'search_categories', 'get_store', 'get_pay_widget_code',
     ]) {
       expect(byName.has(name), `missing tool ${name}`).toBe(true);
     }

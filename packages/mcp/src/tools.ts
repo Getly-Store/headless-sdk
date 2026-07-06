@@ -1,5 +1,5 @@
 /**
- * Getly MCP tool registry — 18 tools.
+ * Getly MCP tool registry — 19 tools.
  *
  * Safety model:
  * - The API key comes ONLY from the GETLY_API_KEY environment variable.
@@ -162,6 +162,21 @@ const IMAGE_TYPES: Record<string, ImageContentType> = {
   '.gif': 'image/gif',
   '.avif': 'image/avif',
 };
+
+/**
+ * Build the canonical Pay Widget embed snippet for a product. The pay.js src is
+ * UNVERSIONED (the file updates in place) — never add `integrity=` or `?v=`.
+ * Buttons default to `auto` (popup on desktop, redirect on mobile); an explicit
+ * mode is stamped only for popup/inline/redirect.
+ */
+function payWidgetSnippet(baseUrl: string, store: string, product: string, mode: string): string {
+  const script = `<script src="${baseUrl}/pay.js" async></script>`;
+  if (mode === 'inline') {
+    return `${script}\n<div data-getly-buy data-store="${store}" data-product="${product}" data-mode="inline"></div>`;
+  }
+  const modeAttr = mode === 'popup' || mode === 'redirect' ? ` data-mode="${mode}"` : '';
+  return `${script}\n<button data-getly-buy data-store="${store}" data-product="${product}"${modeAttr}>Buy</button>`;
+}
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -780,6 +795,77 @@ export const TOOLS: GetlyTool[] = [
         commissionPercent: s.commissionPercent,
         createdAt: s.createdAt,
         url: `${getBaseUrl()}/store/${String(s.slug)}`,
+      });
+    }),
+  },
+
+  // ---------------------------------------------------------- pay widget --
+  {
+    name: 'get_pay_widget_code',
+    description:
+      'Generate the Pay Widget embed snippet (a <script> tag + a Buy button/div) that sells ONE of your products from ANY external website — a landing page, quiz funnel, link-in-bio, Webflow/Framer/Carrd site. Buyers pay by card + Apple Pay/Google Pay on a Getly-hosted popup; Getly handles delivery, receipts, refunds and the payout. No API key ever touches the browser. Validates that the product is active and publicly purchasable first. Read-only — it only returns code, it changes nothing.',
+    annotations: { title: 'Get Pay Widget embed code', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      productSlug: z.string().min(1)
+        .describe('The product SLUG (from list_products → slug, or the product URL) — not the uuid.'),
+      mode: z.enum(['auto', 'popup', 'inline', 'redirect']).optional()
+        .describe("Embed mode. auto (default): popup on desktop, same-tab redirect on mobile. popup: always a popup. inline: an embedded Stripe form inside a <div>. redirect: same-tab. Apple Pay/Google Pay appear automatically in popup/auto/redirect; inline shows cards + Link until the seller registers the domain in the dashboard."),
+    },
+    handler: guarded(true, async (args) => {
+      const productSlug = String(args.productSlug);
+      const mode = (args.mode as string | undefined) || 'auto';
+
+      // The widget needs data-store — resolve the key's own store slug.
+      const storeEnv = await apiRequest<{ slug: string; name?: string }>('api/v1/store');
+      const storeSlug = String(storeEnv.data.slug);
+
+      // Validate the product via the NO-AUTH storefront endpoint (same view the
+      // widget itself uses): only active products of non-suspended sellers
+      // resolve; everything else (draft/pending/archived/unknown) reads as 404.
+      let product: V1ProductLike | null = null;
+      try {
+        const env = await apiRequest<V1ProductLike>(
+          `api/v1/public/stores/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}`,
+          { apiKey: null },
+        );
+        product = env.data;
+      } catch (err) {
+        if (err instanceof GetlyApiError && err.status === 404) {
+          return refusal(
+            `No ACTIVE public product "${productSlug}" in store "${storeSlug}". The Pay Widget only sells active products. ` +
+              'List sellable products with list_products (status: active) and use one of their slugs. ' +
+              'If the product exists but is a draft, publish it first with publish_product (needs human confirmation).',
+          );
+        }
+        throw err;
+      }
+
+      if (!product || typeof product.priceCents !== 'number' || product.priceCents <= 0) {
+        return refusal(
+          `Product "${productSlug}" is not purchasable through the Pay Widget — it must be a fixed-price product above $0. ` +
+            'Free or pay-what-you-want products check out on their product page, not the widget.',
+        );
+      }
+
+      const snippet = payWidgetSnippet(getBaseUrl(), storeSlug, productSlug, mode);
+      return json({
+        product: {
+          name: product.name,
+          slug: product.slug,
+          priceCents: product.priceCents,
+          url: product.urls?.product,
+        },
+        mode,
+        snippet,
+        instructions: [
+          'Paste the snippet anywhere in the page HTML (the <script> is safe to load once; extra buttons on the same page reuse it).',
+          'For a quiz/funnel that picks the product at runtime, render the button with a dynamic data-product and call window.GetlyPay.scan() after inserting it.',
+          'Optional attributes: data-success-url="https://…" (where the buyer lands after paying), data-price="show" (append the live price to the button label), data-locale="ru"|"de", and data-i18n-buy / data-i18n-loading / data-i18n-error overrides.',
+        ],
+        security:
+          'The getly:pay:success browser event is an ADVISORY UI signal only — NEVER unlock files, license keys or paid content on it (a visitor can forge it). Getly delivers the product server-side (buyer email + library) once Stripe confirms payment; verify real sales via the sale.completed / checkout_link.completed webhook.',
+        docs: `${getBaseUrl()}/pay-widget`,
       });
     }),
   },

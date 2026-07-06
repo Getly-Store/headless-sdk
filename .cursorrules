@@ -145,6 +145,7 @@ real price after. Never test with real cards.
 - `GET /api/categories` — the 708-category tree (map names → `categoryId`).
 - `POST /api/v1/licenses/validate|activate|deactivate` — license checks from shipped apps.
 - `GET /go/{linkId}` — checkout-link redirect (this IS the pay URL).
+- **Pay Widget** — to sell from the user's OWN site, hand them the embed, not an API call: `<script src="https://www.getly.store/pay.js" async></script>` + `<button data-getly-buy data-store="S" data-product="P">Buy</button>` (card + Apple Pay/Google Pay, no seller Stripe account; MCP tool `get_pay_widget_code`). It calls `POST /api/v1/public/checkout` + polls `GET /api/v1/public/checkout/{linkId}/status`. `getly:pay:success` is advisory UI only — NEVER unlock content on it; verify via the `sale.completed` webhook.
 
 ## The 3 human steps you cannot do for the user
 

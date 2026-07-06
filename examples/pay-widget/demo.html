@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Getly Pay Widget — demo</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #111; }
+      h1 { font-size: 1.6rem; }
+      section { border: 1px solid #e5e5e5; border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; }
+      .buy { display: inline-flex; align-items: center; gap: .5rem; background: #111; color: #fff; border: 0; border-radius: 10px; padding: .8rem 1.4rem; font-size: 1rem; font-weight: 600; cursor: pointer; }
+      .note { color: #b45309; font-size: .85rem; }
+      code { background: #f4f4f5; padding: .1rem .35rem; border-radius: 5px; }
+    </style>
+  </head>
+  <body>
+    <h1>Getly Pay Widget — live demo</h1>
+    <p class="note">
+      ⚠️ These buttons mint <strong>real</strong> checkouts for the seeded
+      <code>getly-demo</code> / <code>demo-doc</code> product ($1). You can cancel
+      on the Stripe page — nothing is charged unless you complete payment.
+    </p>
+
+    <!-- Load the widget once for the whole page. -->
+    <script src="https://www.getly.store/pay.js" async></script>
+
+    <section>
+      <h2>Popup mode (default)</h2>
+      <p>Hosted Getly checkout in a popup. Apple Pay / Google Pay appear automatically.</p>
+      <button
+        class="buy"
+        data-getly-buy
+        data-store="getly-demo"
+        data-product="demo-doc"
+        data-price="show"
+      >
+        Buy the demo
+      </button>
+    </section>
+
+    <section>
+      <h2>Inline mode</h2>
+      <p>Embedded Stripe checkout, rendered right here on the page.</p>
+      <div
+        data-getly-buy
+        data-store="getly-demo"
+        data-product="demo-doc"
+        data-mode="inline"
+      ></div>
+    </section>
+
+    <p style="color:#666;font-size:.85rem">
+      Docs: <a href="https://www.getly.store/pay-widget">getly.store/pay-widget</a>
+      · Get your own snippet at
+      <a href="https://www.getly.store/dashboard/pay-widget">/dashboard/pay-widget</a>
+    </p>
+  </body>
+</html>

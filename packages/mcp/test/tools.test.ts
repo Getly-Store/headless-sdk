@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('tool registry', () => {
-  it('exposes exactly 18 tools with stable names', () => {
+  it('exposes exactly 19 tools with stable names', () => {
     expect(TOOL_NAMES).toEqual([
       'list_products',
       'get_product',
@@ -36,8 +36,9 @@ describe('tool registry', () => {
       'get_sales_stats',
       'search_categories',
       'get_store',
+      'get_pay_widget_code',
     ]);
-    expect(TOOLS).toHaveLength(18);
+    expect(TOOLS).toHaveLength(19);
   });
 
   it('annotations snapshot (readOnly / destructive / idempotent hints)', () => {
@@ -70,6 +71,7 @@ describe('tool registry', () => {
       get_sales_stats: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       search_categories: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       get_store: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      get_pay_widget_code: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
     });
   });
 
@@ -246,5 +248,83 @@ describe('API error surfacing', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('missing_file');
     expect(result.content[0].text).toContain('Attach at least one downloadable file');
+  });
+});
+
+describe('get_pay_widget_code', () => {
+  beforeEach(() => {
+    process.env.GETLY_API_KEY = 'getly_sk_live_test_0000000000';
+  });
+
+  function stubStoreThenProduct(product: Record<string, unknown> | null): ReturnType<typeof vi.fn> {
+    return vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.includes('/api/v1/store')) {
+        return new Response(JSON.stringify({ success: true, data: { slug: 'maker-studio', name: 'Maker Studio' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (u.includes('/api/v1/public/stores/')) {
+        if (product === null) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Product not found', errorDetail: { code: 'not_found', message: 'Product not found' } }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response(JSON.stringify({ success: true, data: product }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`unexpected fetch: ${u}`);
+    });
+  }
+
+  it('returns a canonical popup button snippet for an active product', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubStoreThenProduct({
+        slug: 'neon-ui-kit',
+        name: 'Neon UI Kit',
+        priceCents: 1900,
+        urls: { product: 'https://www.getly.store/product/neon-ui-kit' },
+      }),
+    );
+
+    const result = await tool('get_pay_widget_code').handler({ productSlug: 'neon-ui-kit' });
+    expect(result.isError).toBeUndefined();
+    const payload = JSON.parse(result.content[0].text) as { snippet: string; mode: string; security: string };
+    expect(payload.mode).toBe('auto');
+    expect(payload.snippet).toContain('<script src="https://www.getly.store/pay.js" async></script>');
+    expect(payload.snippet).toContain('data-getly-buy');
+    expect(payload.snippet).toContain('data-store="maker-studio"');
+    expect(payload.snippet).toContain('data-product="neon-ui-kit"');
+    // auto mode omits data-mode (the canonical button).
+    expect(payload.snippet).not.toContain('data-mode');
+    // Advisory-events honesty note is always present.
+    expect(payload.security.toLowerCase()).toContain('advisory');
+  });
+
+  it('emits an inline <div> with data-mode="inline"', async () => {
+    vi.stubGlobal('fetch', stubStoreThenProduct({ slug: 'neon-ui-kit', name: 'Neon UI Kit', priceCents: 1900 }));
+    const result = await tool('get_pay_widget_code').handler({ productSlug: 'neon-ui-kit', mode: 'inline' });
+    const payload = JSON.parse(result.content[0].text) as { snippet: string };
+    expect(payload.snippet).toContain('<div data-getly-buy');
+    expect(payload.snippet).toContain('data-mode="inline"');
+  });
+
+  it('refuses a product that is not active/public (404)', async () => {
+    vi.stubGlobal('fetch', stubStoreThenProduct(null));
+    const result = await tool('get_pay_widget_code').handler({ productSlug: 'ghost' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('No ACTIVE public product');
+  });
+
+  it('refuses a free/PWYW product (priceCents <= 0)', async () => {
+    vi.stubGlobal('fetch', stubStoreThenProduct({ slug: 'freebie', name: 'Freebie', priceCents: 0 }));
+    const result = await tool('get_pay_widget_code').handler({ productSlug: 'freebie' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not purchasable through the Pay Widget');
   });
 });

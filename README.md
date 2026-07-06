@@ -99,7 +99,8 @@ Now this is a conversation, not a coding session:
 | [`@getly/nextjs`](packages/nextjs) | `Checkout()` + `Webhooks()` route handlers — Polar-style one-liners for Next.js. |
 | [`@getly/auto-store`](packages/auto-store) | The folder → live store CLI (Claude-powered). |
 | [`create-getly-store`](packages/create-getly-store) | `npx create-getly-store my-shop` → a deployable Next.js storefront wired to your Getly store. |
-| [`examples/`](examples) | Telegram sales bot (sells in-chat, confirms payments), dependency-free storefront widget. |
+| [`examples/`](examples) | Telegram sales bot (sells in-chat, confirms payments), dependency-free storefront widget, one-line **Pay Widget** buy button. |
+| [**Pay Widget**](docs/pay-widget.md) | One `<script>` + a Buy button adds checkout (card + Apple Pay / Google Pay) to **any** site — no API key in the browser, no Stripe account for the seller. Getly delivers the file. |
 | [`openapi/getly-v1.yaml`](openapi/getly-v1.yaml) | The whole API, OpenAPI 3.1, examples on every operation. Also served at [getly.store/openapi.yaml](https://www.getly.store/openapi.yaml). |
 | [`llms.txt`](llms.txt) | The entire API reference as one file your AI can swallow. Also at [getly.store/llms-api.txt](https://www.getly.store/llms-api.txt). |
 | [`AGENTS.md`](AGENTS.md) | The golden prompt: paste into Cursor/ChatGPT and your AI uses the API correctly on the first try. |
@@ -145,6 +146,7 @@ Create a $0 product (or a 100%-off coupon), run the full checkout-link → guest
 
 - [**Telegram sales bot**](examples/telegram-sales-bot) — sells your catalog in chat, drops pay links, confirms payment in the thread. The "AI closes deals mid-conversation" demo, running on a laptop.
 - [**Storefront widget**](examples/storefront-widget) — one `<script>` + one `<div>` on any site (v0, Lovable, Webflow, plain HTML) renders your products with Buy buttons. No API key in the browser, ever.
+- [**Pay Widget**](examples/pay-widget) — one `<script>` + a Buy button turns any site into a checkout for a single product. Card + Apple Pay / Google Pay on a hosted popup; Getly delivers the file and handles receipts + refunds. Full guide in [`docs/pay-widget.md`](docs/pay-widget.md).
 - [**React snippets**](docs/react-snippets.md) — copy-paste `<GetlyStorefront/>` and `<GetlyBuyButton/>` for generated apps, plus a [ready prompt for v0/Lovable/Bolt](docs/v0-lovable-prompt.md).
 
 ## 🗺 Roadmap
