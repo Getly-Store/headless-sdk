@@ -130,15 +130,18 @@ script-src  https://www.getly.store
 connect-src https://www.getly.store
 ```
 
-**Inline (adds Stripe.js + Turnstile):**
+**Inline (adds Stripe.js):**
 ```
-script-src  https://www.getly.store https://js.stripe.com https://challenges.cloudflare.com
+script-src  https://www.getly.store https://js.stripe.com
 connect-src https://www.getly.store https://api.stripe.com
-frame-src   https://js.stripe.com https://challenges.cloudflare.com
+frame-src   https://js.stripe.com
 ```
 
-The widget only ever injects two external scripts — `js.stripe.com` and
-`challenges.cloudflare.com` — and never uses `eval`, `innerHTML`, or `import()`.
+The widget only ever injects ONE external script — `js.stripe.com` (inline
+mode) — and never uses `eval`, `innerHTML`, or `import()`. Anti-abuse
+verification (Cloudflare Turnstile) never runs on your page: when a checkout
+needs it, the popup is sent to Getly's own `/pay/challenge` page, solves it
+there, and continues to Stripe — nothing extra to allow in your CSP.
 
 ---
 
