@@ -62,7 +62,9 @@ Alternates:
 > - Three steps still need a human: creating the account, generating the API key,
 >   and connecting payouts (Stripe/crypto). Everything after that is API.
 > - New stores' API-created products go through moderation before going live.
-> - Fees: 20% all-in (sellers keep 90% their first 3 months). No monthly fee.
+> - Fees: sales you drive via the API/widget are your own traffic — 10% all-in
+>   (you keep 90%, always). Marketplace-driven sales: 20% base, volume tiers down
+>   to 12%. New sellers keep 90% on everything their first 3 months. No monthly fee.
 >
 > Everything is MIT on GitHub — the OpenAPI spec, the MCP server, a Telegram
 > sales-bot example, an embeddable storefront widget. Ask us anything, and if you

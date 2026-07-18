@@ -61,8 +61,9 @@ Honest limitations, so nobody discovers them in the comments first:
   the product is live.
 - No test mode yet — the recommended way to test the money path is a $1 product
   of your own. On the roadmap.
-- The marketplace takes 20% (sellers keep 90% for the first 3 months). That's
-  the business model; the SDK/MCP layer itself is MIT and free.
+- Sales you drive through the API/widget are own-traffic: 10% all-in (you keep
+  90%, always). Marketplace-driven sales: 20% base with volume tiers to 12%.
+  That's the business model; the SDK/MCP layer itself is MIT and free.
 
 The part I'd most like feedback on: the error-envelope-for-LLMs idea (code +
 hint + docsUrl on every error) and whether the MCP confirm:true convention is
