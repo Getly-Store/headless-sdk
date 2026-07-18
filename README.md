@@ -107,9 +107,9 @@ Now this is a conversation, not a coding session:
 
 ## 💸 What it costs (no fine print)
 
-Getly takes **20% of each sale — and that's the only number**. No monthly fee, no listing fee, no file-hosting bill, no payment-gateway setup.
+Sales you drive through this SDK — API checkout links, the Pay Widget on your own site, your Telegram store — are **your own traffic: Getly takes 10%, you keep 90%. Always.** Sales the Getly marketplace brings you start at 20% and drop with volume (17% / 15% / 12% by prior-month sales). No monthly fee, no listing fee, no file-hosting bill, no payment-gateway setup. Full model with a live calculator: [getly.store/pricing](https://www.getly.store/pricing).
 
-| | **Getly (20% all-in)** | Typical payments-API stack (4–10% + fixed) |
+| | **Getly (10% all-in on your own traffic)** | Typical payments-API stack (4–10% + fixed) |
 |---|---|---|
 | Payment processing (cards) | ✅ included | ✅ that's the 4–10% |
 | **Crypto checkout + crypto payouts** (USDT/USDC, 5 chains) | ✅ included | ❌ |
@@ -120,7 +120,7 @@ Getly takes **20% of each sale — and that's the only number**. No monthly fee,
 | Chargebacks, receipts, refund plumbing | ✅ handled | partially |
 | Fixed monthly cost | **$0** | $0–29+ |
 
-**New sellers keep 90% for their first 3 months.** If you already have an audience and only need payment rails, a 4% API might be cheaper for you — we'd rather tell you that here than have you discover it angry. Tax note: Getly handles payments, delivery, refunds and chargebacks; sellers remain responsible for their own income/VAT obligations ([details](https://www.getly.store/faq)).
+**New sellers keep 90% on everything for their first 3 months.** And the old honest caveat — «if you only need payment rails, a 4% API might be cheaper» — mostly died with the 10% own-traffic rate: at 10% all-in (processing, hosting, delivery, crypto, licenses, chargebacks included) versus 4–10% + fixed fees + everything above being your problem, the rails-only stack rarely wins anymore. We'd still rather you do that math than discover it angry. Tax note: Getly handles payments, delivery, refunds and chargebacks; sellers remain responsible for their own income/VAT obligations ([details](https://www.getly.store/faq)).
 
 ## 🌍 Why builders actually pick Getly
 
