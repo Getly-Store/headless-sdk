@@ -60,6 +60,7 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `list_products` | List store products (cursor-paginated, filters) | read-only |
 | `get_product` | Full product detail (files, images, reviews, URLs) | read-only |
 | `create_product` | Create a **draft** product (money = integer cents) | 20/day cap |
+  Timed access: pass `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents/label) to sell access for a period on a one-time payment; the store's webhook receives `access.expiring` and `access.expired`.
 | `update_product` | Edit name/price/description/images/tags | idempotent; cannot publish/archive |
 | `publish_product` | Make a draft publicly purchasable | **requires `confirm: true`** |
 | `archive_product` | Remove a product from sale (soft delete) | **destructive, requires `confirm: true`** |

@@ -35,6 +35,10 @@ export interface WebhooksOptions {
   onCheckoutLinkCompleted?: EventHandler;
   /** license.activated */
   onLicenseActivated?: EventHandler;
+  /** access.expiring — a timed-access term ends in 7 days (renew reminder went to the buyer). */
+  onAccessExpiring?: EventHandler;
+  /** access.expired — a timed-access term has ended; revoke access on your side. */
+  onAccessExpired?: EventHandler;
   /** Called for EVERY verified event (in addition to the typed handler). */
   onEvent?: (event: GetlyWebhookEvent) => MaybePromise<void>;
 }
@@ -44,6 +48,8 @@ const TYPED_HANDLERS: Record<string, keyof WebhooksOptions> = {
   'order.refunded': 'onOrderRefunded',
   'checkout_link.completed': 'onCheckoutLinkCompleted',
   'license.activated': 'onLicenseActivated',
+  'access.expiring': 'onAccessExpiring',
+  'access.expired': 'onAccessExpired',
 };
 
 /**

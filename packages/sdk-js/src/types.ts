@@ -88,6 +88,10 @@ export interface Product {
   tags: string[] | null;
   licenseKeysEnabled: boolean;
   licenseActivationLimit: number;
+  /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period on a one-time payment. */
+  accessMode: 'lifetime' | 'timed';
+  /** Present when relations were loaded (GET single). The periods on offer, shortest first. */
+  accessTerms?: AccessTerm[];
   createdVia?: string | null;
   urls: ProductUrls;
   createdAt: string;
@@ -119,6 +123,30 @@ export interface ProductListParams extends CursorListParams {
   status?: 'active' | 'draft' | 'pending_review' | 'archived';
 }
 
+/** One period a timed-access product is sold on. Money is integer cents. */
+export interface AccessTerm {
+  id: string;
+  durationDays: number;
+  priceCents: number;
+  compareAtPriceCents: number | null;
+  label: string | null;
+  isActive: boolean;
+}
+
+export interface AccessTermInput {
+  /** Existing term id to update in place; omit to add a new term. */
+  id?: string;
+  /** 1–3650, unique per product. 30 = one month, 365 = one year. */
+  durationDays: number;
+  priceCents: number;
+  /** Crossed-out "was" price; must exceed priceCents. */
+  compareAtPriceCents?: number | null;
+  /** Optional name shown to buyers ("Season pass"). ≤ 80 chars. */
+  label?: string | null;
+  /** false retires the term. Default true. */
+  isActive?: boolean;
+}
+
 export interface ProductCreateInput {
   name: string;
   description?: string;
@@ -143,6 +171,14 @@ export interface ProductCreateInput {
   licenseKeysEnabled?: boolean;
   /** 1-100 (default 3). */
   licenseActivationLimit?: number;
+  /**
+   * Timed access — sell access for a period on a ONE-TIME payment (no recurring
+   * billing). The buyer picks a term, access ends on a date, buying again extends
+   * it; your webhook endpoint receives access.expiring / access.expired. A timed
+   * product cannot be published without at least one active term.
+   */
+  accessMode?: 'lifetime' | 'timed';
+  accessTerms?: AccessTermInput[];
 }
 
 export interface ProductUpdateInput {
@@ -158,6 +194,9 @@ export interface ProductUpdateInput {
   images?: Array<{ url: string; altText?: string }>;
   licenseKeysEnabled?: boolean;
   licenseActivationLimit?: number;
+  accessMode?: 'lifetime' | 'timed';
+  /** REPLACES the terms table: rows with an id are updated, rows left out are retired. */
+  accessTerms?: AccessTermInput[];
 }
 
 export interface FilePresign {
@@ -464,6 +503,8 @@ export type WebhookEventType =
   | 'order.refunded'
   | 'checkout_link.completed'
   | 'license.activated'
+  | 'access.expiring'
+  | 'access.expired'
   | 'dispute.created'
   | 'dispute.resolved'
   | 'subscription.created'

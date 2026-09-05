@@ -131,6 +131,9 @@ interface V1ProductLike {
   priceCents: number;
   compareAtPriceCents: number | null;
   licenseKeysEnabled?: boolean;
+  /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period. */
+  accessMode?: 'lifetime' | 'timed' | string;
+  accessTerms?: Array<{ id: string; durationDays: number; priceCents: number; compareAtPriceCents: number | null; label: string | null; isActive: boolean }>;
   createdAt?: string;
   category?: { name?: string; slug?: string } | null;
   urls?: { product?: string };
@@ -147,6 +150,8 @@ function projectProduct(p: V1ProductLike) {
     priceCents: p.priceCents,
     compareAtPriceCents: p.compareAtPriceCents,
     licenseKeysEnabled: p.licenseKeysEnabled,
+    accessMode: p.accessMode ?? 'lifetime',
+    ...(p.accessTerms ? { accessTerms: p.accessTerms } : {}),
     category: p.category ? { name: p.category.name, slug: p.category.slug } : null,
     url: p.urls?.product,
     createdAt: p.createdAt,
@@ -260,6 +265,17 @@ export const TOOLS: GetlyTool[] = [
         .describe('Issue a license key with every sale'),
       licenseActivationLimit: z.number().int().min(1).max(100).optional()
         .describe('Activation seats per license key (default 3)'),
+      accessMode: z.enum(['lifetime', 'timed']).optional()
+        .describe("How it is sold. 'timed' = access for a period on a ONE-TIME payment (no recurring billing): the buyer picks a term, access ends on a date, buying again extends it. Default 'lifetime'."),
+      accessTerms: z.array(z.object({
+        id: z.string().optional().describe('Existing term id (update in place); omit for a new term'),
+        durationDays: z.number().int().min(1).max(3650).describe('Length of access in days (30 = 1 month, 365 = 1 year); unique per product'),
+        priceCents: z.number().int().min(0).describe('Price of this term in integer cents'),
+        compareAtPriceCents: z.number().int().min(0).optional().describe('Crossed-out "was" price in cents; must exceed priceCents'),
+        label: z.string().max(80).optional().describe('Optional name shown to buyers, e.g. "Season pass"'),
+        isActive: z.boolean().optional().describe('false retires the term (default true)'),
+      })).max(6).optional()
+        .describe("The periods on offer when accessMode is 'timed'. On update this REPLACES the table: rows with an id are updated, rows left out are retired. A timed product cannot be published without at least one active term."),
     },
     handler: guarded(true, async (args) => {
       const env = await apiRequest<V1ProductLike & Record<string, unknown>>('api/v1/products', {
@@ -276,6 +292,8 @@ export const TOOLS: GetlyTool[] = [
           images: args.images,
           licenseKeysEnabled: args.licenseKeysEnabled,
           licenseActivationLimit: args.licenseActivationLimit,
+          accessMode: args.accessMode,
+          accessTerms: args.accessTerms,
           status: 'draft',
         },
       });
@@ -311,6 +329,17 @@ export const TOOLS: GetlyTool[] = [
         .describe("Only 'draft' (unpublish) is allowed here. Publishing requires publish_product; archiving requires archive_product — both need human confirmation."),
       licenseKeysEnabled: z.boolean().optional(),
       licenseActivationLimit: z.number().int().min(1).max(100).optional(),
+      accessMode: z.enum(['lifetime', 'timed']).optional()
+        .describe("How it is sold. 'timed' = access for a period on a ONE-TIME payment (no recurring billing): the buyer picks a term, access ends on a date, buying again extends it. Default 'lifetime'."),
+      accessTerms: z.array(z.object({
+        id: z.string().optional().describe('Existing term id (update in place); omit for a new term'),
+        durationDays: z.number().int().min(1).max(3650).describe('Length of access in days (30 = 1 month, 365 = 1 year); unique per product'),
+        priceCents: z.number().int().min(0).describe('Price of this term in integer cents'),
+        compareAtPriceCents: z.number().int().min(0).optional().describe('Crossed-out "was" price in cents; must exceed priceCents'),
+        label: z.string().max(80).optional().describe('Optional name shown to buyers, e.g. "Season pass"'),
+        isActive: z.boolean().optional().describe('false retires the term (default true)'),
+      })).max(6).optional()
+        .describe("The periods on offer when accessMode is 'timed'. On update this REPLACES the table: rows with an id are updated, rows left out are retired. A timed product cannot be published without at least one active term."),
     },
     handler: guarded(true, async (args) => {
       const { productId, ...rest } = args;
