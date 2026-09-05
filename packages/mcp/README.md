@@ -60,7 +60,6 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `list_products` | List store products (cursor-paginated, filters) | read-only |
 | `get_product` | Full product detail (files, images, reviews, URLs) | read-only |
 | `create_product` | Create a **draft** product (money = integer cents) | 20/day cap |
-  Timed access: pass `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents/label) to sell access for a period on a one-time payment; the store's webhook receives `access.expiring` and `access.expired`.
 | `update_product` | Edit name/price/description/images/tags | idempotent; cannot publish/archive |
 | `publish_product` | Make a draft publicly purchasable | **requires `confirm: true`** |
 | `archive_product` | Remove a product from sale (soft delete) | **destructive, requires `confirm: true`** |
@@ -76,6 +75,8 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `get_sales_stats` | Revenue (cents), sales, per-month breakdown, recent orders | read-only |
 | `search_categories` | Fuzzy search of the public 700+ category tree | read-only, no key needed, cached 1h |
 | `get_store` | Store profile + public URL | read-only |
+
+**Timed access.** `create_product` and `update_product` accept `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents / label / isActive) to sell access for a period on a one-time payment — no recurring billing. On update the array replaces the table: rows with an `id` are updated, rows left out are retired. The store's webhook endpoint receives `access.expiring` (7 days before the end) and `access.expired`.
 
 There is intentionally **no bulk-delete tool**, and the model is instructed to get explicit human approval before any confirm-gated call.
 
