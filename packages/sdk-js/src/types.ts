@@ -100,6 +100,8 @@ export interface Product {
   keyPoolEnabled: boolean;
   /** "Running low" email when available pool keys drop to this many (1-1000, default 5). */
   keyPoolLowThreshold: number;
+  /** Free trial / demo download shown on the product page before purchase; null = none. Always present. */
+  demoUrl: string | null;
   /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period on a one-time payment. */
   accessMode: 'lifetime' | 'timed';
   /** Present when relations were loaded (GET single). The periods on offer, shortest first. */
@@ -200,6 +202,12 @@ export interface ProductCreateInput {
   /** 1-1000 (default 5): when the "running low" email is sent. */
   keyPoolLowThreshold?: number;
   /**
+   * Free trial / demo download shown before purchase: an https URL of a file
+   * you uploaded to Getly, or — Getly Trusted stores only — a link to your own
+   * trial download. Executables cannot be uploaded as a demo.
+   */
+  demoUrl?: string | null;
+  /**
    * Timed access — sell access for a period on a ONE-TIME payment (no recurring
    * billing). The buyer picks a term, access ends on a date, buying again extends
    * it; your webhook endpoint receives access.expiring / access.expired. A timed
@@ -230,6 +238,8 @@ export interface ProductUpdateInput {
   /** true turns licenseKeysEnabled off in the same write (and vice versa); both true is a 400. */
   keyPoolEnabled?: boolean;
   keyPoolLowThreshold?: number;
+  /** Set the free trial / demo download, or `null` to remove it. */
+  demoUrl?: string | null;
   accessMode?: 'lifetime' | 'timed';
   /** REPLACES the terms table: rows with an id are updated, rows left out are retired. */
   accessTerms?: AccessTermInput[];
