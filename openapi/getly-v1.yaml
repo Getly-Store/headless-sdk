@@ -87,7 +87,10 @@ info:
       `sale.completed` payload: `orderId`, `buyerId`, `buyerEmail` (the address the
       buyer paid with; a guest's checkout email counts. Deliver your own license
       keys here), `items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`,
-      `isGift`) and `total`. Amounts are integer cents and cover your store's
+      `isGift`, `licenseKey`) and `total`. `licenseKey` is the key issued for
+      that item (Getly-generated or from your key pool), or null when the product
+      has no keys or the pool was empty — the buyer then gets the key by email as
+      soon as you add more. Amounts are integer cents and cover your store's
       items only. `checkoutLinkId`, `reference` and `metadata` are added when the
       sale came from a checkout link. For an item with `isGift: true`, send its key
       to buyerEmail (the giver). The gift recipient's address is not shared.
@@ -291,6 +294,11 @@ paths:
         product FAQ and in the page's structured data. Optional: publishing does
         not require it, but a listing without one answers the buyer's first
         question with nothing.
+        Seller key pool: keyPoolEnabled true hands each buyer the next key from
+        YOUR list instead of a Getly-generated key (mutually exclusive with
+        licenseKeysEnabled — both true is a 400). keyPoolLowThreshold (integer
+        1–1000, default 5) sets when you get the "running low" email. Add keys
+        with POST /api/v1/products/{id}/keys once the product exists.
         Timed access: send accessMode "timed" and accessTerms[] (durationDays 1–3650, unique; priceCents ≥ 0; optional compareAtPriceCents above priceCents; optional label) to sell access for a period on a one-time payment — the buyer picks a term, access ends on a date, and your endpoint receives access.expiring (7 days before) and access.expired webhooks. The catalogue price becomes the cheapest active term. A timed product cannot be published without an active term. On PATCH, accessTerms replaces the table (rows with an id are updated, missing rows are retired, never deleted). Licence keys sold under a term stop validating when it ends (license_expired).
         Provenance is recorded as createdVia="api".
       parameters:
@@ -462,7 +470,10 @@ paths:
         Updatable: name, description, shortDescription, status (active/draft/
         archived only), categoryId, tags, priceCents, compareAtPriceCents,
         licenseKeysEnabled, licenseActivationLimit, licenseType (enum or null to
-        clear), images (full replacement).
+        clear), keyPoolEnabled, keyPoolLowThreshold, images (full replacement).
+        `keyPoolEnabled: true` sells YOUR keys (POST /api/v1/products/{id}/keys)
+        and turns `licenseKeysEnabled` off in the same write; `licenseKeysEnabled:
+        true` turns the pool off; both true in one request is a 400.
         Setting status "active" requires at least one downloadable file, at
         least one image and a categoryId (publish_requires_category), and a
         product in pending_review/rejected cannot be self-published
@@ -793,6 +804,181 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/products/{id}/keys:
+    get:
+      operationId: listProductKeys
+      tags:
+        - Products
+      x-scope: read:products
+      summary: Your key pool — counters and the masked key list
+      description: |-
+        For a product with keyPoolEnabled, each sale hands the buyer the next
+        unsold key in the order you added them. Keys are shown masked
+        (`ABCD…WXYZ`); the plaintext is never returned. `counts.waiting` is the
+        number of paid orders waiting because the pool ran out — they get their
+        keys the moment you add more. `refunded: true` on an issued key means
+        that sale was refunded; revoke the key in your own system.
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Counters and one page of masked keys, in sale order.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  keyPoolEnabled: true
+                  keyPoolLowThreshold: 5
+                  counts:
+                    available: 120
+                    issued: 38
+                    waiting: 0
+                  keys:
+                    - id: 8b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e
+                      masked: ABCD…WXYZ
+                      status: issued
+                      issuedAt: '2026-09-20T14:02:11.000Z'
+                      orderItemId: 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+                      refunded: false
+                  limit: 50
+                  offset: 0
+                  total: 158
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: addProductKeys
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Add keys to the pool
+      description: |-
+        Body `{ keys: string[] }` — up to 5000 per request, each at most 500
+        characters. Keys are trimmed; blanks are dropped; repeats in the body
+        (`duplicatesInInput`) and keys already in the pool (`duplicates`) are
+        counted, not added. Keys are sold in the order sent. Buyers waiting for
+        a key get one immediately (`filled`).
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - idempotency_conflict
+        - rate_limited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              keys:
+                - AAAA-BBBB-CCCC-0001
+                - AAAA-BBBB-CCCC-0002
+      responses:
+        '201':
+          description: What was added.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  added: 98
+                  duplicates: 2
+                  duplicatesInInput: 0
+                  tooLong: 0
+                  blank: 0
+                  filled: 3
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/products/{id}/keys/{keyId}:
+    delete:
+      operationId: removeProductKey
+      tags:
+        - Products
+      x-scope: write:products
+      summary: Remove an unsold key
+      description: |-
+        Only an available (unsold) key can be removed. An issued key is the
+        record of a sale and stays — 409 `key_not_available`.
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - name: keyId
+          in: path
+          required: true
+          description: Key id from GET /api/v1/products/{id}/keys.
+          schema:
+            type: string
+            format: uuid
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - key_not_available
+        - rate_limited
+      responses:
+        '200':
+          description: Removed.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 8b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e
+                  removed: true
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InsufficientScope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The key is issued (a sale record), already removed, or not in this product's pool (code key_not_available).
         '429':
           $ref: '#/components/responses/RateLimited'
   /api/v1/uploads/images/presign:
@@ -3169,6 +3355,7 @@ components:
     quota_exceeded: Daily creation cap reached for this API key (products 100/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
     expired: The resource has expired. Create a fresh one.
     license_invalid: The license key does not exist or was deactivated.
+    key_not_available: Only an unsold (available) key can be removed. An issued key is the record of a sale and stays; a removed key is already gone. Re-read GET /api/v1/products/{id}/keys — do not retry.
     license_expired: 'The access period this key was sold for has ended; the buyer can start a new period from the product page.'
     activation_limit_reached: All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
     billing_not_approved: 'Getly Billing is granted by application: the seller applies at /dashboard/billing with the website the SaaS runs on and a description of what is sold, and a human reviews it. Reads keep working; creating plans and checkouts waits for approval. Nothing here clears itself by waiting or retrying.'
@@ -3227,6 +3414,7 @@ components:
         license_invalid — license key unknown or deactivated;
         activation_limit_reached — free a seat via licenses/deactivate;
         license_expired — the timed-access period this key was sold for ended;
+        key_not_available — only an unsold pool key can be removed, do not retry;
         publish_requires_image / publish_requires_category — add the missing image / categoryId, then publish;
         category_not_allowed — pick a marketplace category, not a system one;
         not_purchasable / widget_disabled / widget_not_approved / origin_not_allowed / challenge_required — Pay Widget gates (see x-error-codes);
@@ -3251,6 +3439,7 @@ components:
         - expired
         - license_invalid
         - license_expired
+        - key_not_available
         - activation_limit_reached
         - publish_requires_image
         - publish_requires_category
@@ -3344,6 +3533,16 @@ components:
             - cc0
             - custom
           description: What the buyer may do with the file. Shown next to the buy button, in the product FAQ and in the page's structured data. null = not stated (the page then shows nothing). Optional — publishing does not require it.
+        keyPoolEnabled:
+          type: boolean
+          default: false
+          description: When true each buyer gets the next unsold key from YOUR pool (POST /api/v1/products/{id}/keys) instead of a Getly-generated key. Mutually exclusive with licenseKeysEnabled — turning one on turns the other off; both true in one request is a 400.
+        keyPoolLowThreshold:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 5
+          description: You get a "running low" email when available keys in the pool drop to this many.
         createdVia:
           type: string
           description: Provenance — "api" for API-created products.

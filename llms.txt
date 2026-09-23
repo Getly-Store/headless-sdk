@@ -115,6 +115,7 @@ Every error response is `{ "success": false, "error": "<message>", "errorDetail"
 - `quota_exceeded` — Daily creation cap reached for this API key (products 100/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
 - `expired` — The resource has expired. Create a fresh one.
 - `license_invalid` — The license key does not exist or was deactivated.
+- `key_not_available` — Only an unsold (available) key can be removed. An issued key is the record of a sale and stays; a removed key is already gone. Re-read GET /api/v1/products/{id}/keys — do not retry.
 - `license_expired` — The access period this key was sold for has ended; the buyer can start a new period from the product page.
 - `activation_limit_reached` — All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
 - `billing_not_approved` — Getly Billing is granted by application: the seller applies at /dashboard/billing with the website the SaaS runs on and a description of what is sold, and a human reviews it. Reads keep working; creating plans and checkouts waits for approval. Nothing here clears itself by waiting or retrying.
@@ -137,7 +138,10 @@ every event.
 `sale.completed` payload: `orderId`, `buyerId`, `buyerEmail` (the address the
 buyer paid with; a guest's checkout email counts. Deliver your own license
 keys here), `items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`,
-`isGift`) and `total`. Amounts are integer cents and cover your store's
+`isGift`, `licenseKey`) and `total`. `licenseKey` is the key issued for
+that item (Getly-generated or from your key pool), or null when the product
+has no keys or the pool was empty — the buyer then gets the key by email as
+soon as you add more. Amounts are integer cents and cover your store's
 items only. `checkoutLinkId`, `reference` and `metadata` are added when the
 sale came from a checkout link. For an item with `isGift: true`, send its key
 to buyerEmail (the giver). The gift recipient's address is not shared.
@@ -244,6 +248,11 @@ the buyer may do with the file — shown next to the buy button, in the
 product FAQ and in the page's structured data. Optional: publishing does
 not require it, but a listing without one answers the buyer's first
 question with nothing.
+Seller key pool: keyPoolEnabled true hands each buyer the next key from
+YOUR list instead of a Getly-generated key (mutually exclusive with
+licenseKeysEnabled — both true is a 400). keyPoolLowThreshold (integer
+1–1000, default 5) sets when you get the "running low" email. Add keys
+with POST /api/v1/products/{id}/keys once the product exists.
 Timed access: send accessMode "timed" and accessTerms[] (durationDays 1–3650, unique; priceCents ≥ 0; optional compareAtPriceCents above priceCents; optional label) to sell access for a period on a one-time payment — the buyer picks a term, access ends on a date, and your endpoint receives access.expiring (7 days before) and access.expired webhooks. The catalogue price becomes the cheapest active term. A timed product cannot be published without an active term. On PATCH, accessTerms replaces the table (rows with an id are updated, missing rows are retired, never deleted). Licence keys sold under a term stop validating when it ends (license_expired).
 Provenance is recorded as createdVia="api".
 
@@ -383,7 +392,10 @@ operationId: `updateProduct` · scope `write:products`
 Updatable: name, description, shortDescription, status (active/draft/
 archived only), categoryId, tags, priceCents, compareAtPriceCents,
 licenseKeysEnabled, licenseActivationLimit, licenseType (enum or null to
-clear), images (full replacement).
+clear), keyPoolEnabled, keyPoolLowThreshold, images (full replacement).
+`keyPoolEnabled: true` sells YOUR keys (POST /api/v1/products/{id}/keys)
+and turns `licenseKeysEnabled` off in the same write; `licenseKeysEnabled:
+true` turns the pool off; both true in one request is a 400.
 Setting status "active" requires at least one downloadable file, at
 least one image and a categoryId (publish_requires_category), and a
 product in pending_review/rejected cannot be self-published
@@ -605,6 +617,122 @@ Response example (HTTP 200):
 ```
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### GET /api/v1/products/{id}/keys — Your key pool — counters and the masked key list
+
+operationId: `listProductKeys` · scope `read:products`
+
+For a product with keyPoolEnabled, each sale hands the buyer the next
+unsold key in the order you added them. Keys are shown masked
+(`ABCD…WXYZ`); the plaintext is never returned. `counts.waiting` is the
+number of paid orders waiting because the pool ran out — they get their
+keys the moment you add more. `refunded: true` on an issued key means
+that sale was refunded; revoke the key in your own system.
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+- `limit` (query) — 
+- `offset` (query) — 
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "keyPoolEnabled": true,
+    "keyPoolLowThreshold": 5,
+    "counts": {
+      "available": 120,
+      "issued": 38,
+      "waiting": 0
+    },
+    "keys": [
+      {
+        "id": "8b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+        "masked": "ABCD…WXYZ",
+        "status": "issued",
+        "issuedAt": "2026-09-20T14:02:11.000Z",
+        "orderItemId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "refunded": false
+      }
+    ],
+    "limit": 50,
+    "offset": 0,
+    "total": 158
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
+
+### POST /api/v1/products/{id}/keys — Add keys to the pool
+
+operationId: `addProductKeys` · scope `write:products`
+
+Body `{ keys: string[] }` — up to 5000 per request, each at most 500
+characters. Keys are trimmed; blanks are dropped; repeats in the body
+(`duplicatesInInput`) and keys already in the pool (`duplicates`) are
+counted, not added. Keys are sold in the order sent. Buyers waiting for
+a key get one immediately (`filled`).
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+
+Request body example:
+
+```json
+{
+  "keys": [
+    "AAAA-BBBB-CCCC-0001",
+    "AAAA-BBBB-CCCC-0002"
+  ]
+}
+```
+
+Response example (HTTP 201):
+
+```json
+{
+  "success": true,
+  "data": {
+    "added": 98,
+    "duplicates": 2,
+    "duplicatesInInput": 0,
+    "tooLong": 0,
+    "blank": 0,
+    "filled": 3
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+
+### DELETE /api/v1/products/{id}/keys/{keyId} — Remove an unsold key
+
+operationId: `removeProductKey` · scope `write:products`
+
+Only an available (unsold) key can be removed. An issued key is the
+record of a sale and stays — 409 `key_not_available`.
+
+Parameters:
+- `id` (path, required) — Product id (uuid).
+- `keyId` (path, required) — Key id from GET /api/v1/products/{id}/keys.
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "8b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+    "removed": true
+  }
+}
+```
+
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `key_not_available`, `rate_limited`.
 
 ### POST /api/v1/uploads/images/presign — Get a presigned upload URL for an image (product images / post covers)
 
