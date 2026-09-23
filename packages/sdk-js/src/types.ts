@@ -676,8 +676,9 @@ export interface StoreUpdateInput {
 }
 
 /**
- * @deprecated Seller payouts are stablecoin-only (USDT/USDC on BNB Smart Chain,
- * min $5; USDT on Tron, min $15). A Stripe Connect account is not a payout route.
+ * @deprecated The endpoint is retired and answers 410 payout_route_retired —
+ * this shape is never returned any more. Seller payouts are stablecoin-only
+ * (USDT/USDC on BNB Smart Chain, min $5; USDT on Tron, min $15).
  */
 export interface PayoutOnboardingResult {
   /** Stripe Connect onboarding link. */

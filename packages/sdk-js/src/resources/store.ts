@@ -37,13 +37,15 @@ export class StoreResource {
   }
 
   /**
-   * POST /api/v1/store/payout-onboarding — Stripe Connect onboarding link.
+   * POST /api/v1/store/payout-onboarding — RETIRED.
    *
-   * @deprecated Seller payouts are stablecoin-only since 2026-09-15: USDT/USDC
-   * on BNB Smart Chain (min $5) or USDT on Tron (min $15), on the 1st and 15th.
-   * The seller saves a wallet at
-   * https://www.getly.store/dashboard/settings?tab=payments. A Connect account
-   * is not a payout route, so do not send sellers to this link.
+   * @deprecated Since 2026-09-23 the endpoint no longer creates Stripe Connect
+   * accounts: it always rejects with a GetlyError whose `code` is
+   * `payout_route_retired` (HTTP 410). Seller payouts are stablecoin-only since
+   * 2026-09-15 — USDT/USDC on BNB Smart Chain (min $5) or USDT on Tron
+   * (min $15), on the 1st and 15th — and the seller saves the wallet at
+   * https://www.getly.store/dashboard/settings?tab=payments (not possible
+   * through the API). Kept only so existing callers get that clear error.
    */
   async payoutOnboarding(opts: MutationOptions = {}): Promise<PayoutOnboardingResult> {
     const res = await this.http.request<Envelope<PayoutOnboardingResult>>(

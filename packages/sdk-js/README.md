@@ -73,7 +73,7 @@ Security: the key is only ever sent as `Authorization: Bearer …` to the config
 | `getly.licenses` | `list`, `iterate`, `validate`*, `activate`*, `deactivate`* |
 | `getly.uploads` | `presignImage`, `uploadImage` |
 | `getly.webhookEndpoints` | `list`, `create`, `update`, `delete` |
-| `getly.store` | `get`, `create`, `update`, `payoutOnboarding` (deprecated) |
+| `getly.store` | `get`, `create`, `update`, `payoutOnboarding` (retired — throws `payout_route_retired`) |
 | `getly.payouts` | `get` |
 | `getly.orders` | `list`, `iterate`, `get` — each order carries the buyer's email |
 | `getly.analytics` | `get` |
@@ -83,7 +83,7 @@ Security: the key is only ever sent as `Authorization: Bearer …` to the config
 
 \* public — works **without** an API key (license checks from shipped software, storefront widgets, the Pay Widget).
 
-**Payments today.** Buyers pay with PayPal or USDT/USDC; card checkout is paused and may return — `publicStore.product()` returns the live `paymentMethods`. Seller payouts go out on the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15); the wallet is saved in the dashboard. `store.payoutOnboarding()` returns a Stripe Connect link that is no longer a payout route — do not send sellers there.
+**Payments today.** Buyers pay with PayPal or USDT/USDC; card checkout is paused and may return — `publicStore.product()` returns the live `paymentMethods`. Seller payouts go out on the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15); the wallet is saved in the dashboard. `store.payoutOnboarding()` is retired: since 2026-09-23 it always throws a `GetlyError` with code `payout_route_retired` (HTTP 410) and creates nothing.
 
 ## Sell your own license keys (key pool)
 

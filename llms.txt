@@ -122,6 +122,7 @@ Every error response is `{ "success": false, "error": "<message>", "errorDetail"
 - `plan_exists` — A billing plan with this externalId already exists in your store. Update that plan, or send a different externalId.
 - `plan_inactive` — This billing plan is inactive. Activate it (PATCH isActive true) or create another plan before minting a checkout.
 - `subscription_not_cancellable` — The subscription has already ended, so there is nothing to cancel.
+- `payout_route_retired` — Seller payouts are stablecoin-only: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15), on the 1st and 15th. The seller saves the wallet at https://www.getly.store/dashboard/settings?tab=payments — that step cannot be done through the API. Stripe Connect onboarding is no longer offered; retrying will not change this.
 - `unknown_endpoint` — No such endpoint. The full list is at https://www.getly.store/developers/docs (machine-readable: https://www.getly.store/llms-api.txt and https://www.getly.store/openapi.yaml). Images upload through POST /api/v1/uploads/images/presign and downloadable files through POST /api/v1/products/{id}/files/presign — there is no /api/v1/media, /api/v1/files or bare /api/v1/uploads.
 - `internal_error` — Unexpected server error — safe to retry with the same Idempotency-Key.
 
@@ -2076,35 +2077,25 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
 
-### POST /api/v1/store/payout-onboarding — Stripe Connect payout-onboarding link (deprecated — payouts are stablecoin-only)
+### POST /api/v1/store/payout-onboarding — Stripe Connect payout onboarding (retired — answers 410)
 
 operationId: `createPayoutOnboardingLink` · scope `write:store`
 
-DEPRECATED. Seller payouts are paid ONLY in stablecoins since
+RETIRED. Seller payouts are paid ONLY in stablecoins since
 2026-09-15: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron
 (minimum $15), on the 1st and 15th. The seller saves a wallet at
 https://www.getly.store/dashboard/settings?tab=payments — that step
-is not available through the API. This endpoint still creates (or
-reuses) a Stripe Connect Express account and returns an onboarding
-link, but a connected account is not a payout route today: do not send
-sellers here.
+is not available through the API. Since 2026-09-23 this endpoint no
+longer creates Stripe Connect accounts: after the usual 401/403 checks
+it always answers 410 `payout_route_retired`, with the wallet setup
+URL in `errorDetail.walletSetupUrl`. Do not retry it.
 
 Parameters:
 - `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
 
-Response example (HTTP 200):
+Response (HTTP 401): 
 
-```json
-{
-  "success": true,
-  "data": {
-    "url": "https://connect.stripe.com/setup/e/acct_123/abcdef",
-    "expiresAt": "2026-07-04T10:05:00.000Z"
-  }
-}
-```
-
-Errors: `unauthorized`, `insufficient_scope`, `not_found`, `idempotency_conflict`, `rate_limited`.
+Errors: `unauthorized`, `insufficient_scope`, `payout_route_retired`, `rate_limited`.
 
 ### GET /api/v1/payouts — Read-only money snapshot (balances, upcoming payouts)
 

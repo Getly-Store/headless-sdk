@@ -204,5 +204,5 @@ real price after. Never test with real payments.
 1. Sign up at getly.store. 2. Create the API key (auto-creates their store). 3. Save a
 payout wallet at `/dashboard/settings?tab=payments` — payouts are USDT/USDC on BNB
 Smart Chain (min $5) or USDT on Tron (min $15), on the 1st and 15th. (Do not send
-them to `POST /api/v1/store/payout-onboarding` — that Stripe Connect link is
-deprecated and not a payout route.) Everything else is yours.
+them to `POST /api/v1/store/payout-onboarding` — Stripe Connect onboarding is
+retired and the endpoint answers 410 `payout_route_retired`.) Everything else is yours.

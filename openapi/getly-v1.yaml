@@ -2879,42 +2879,41 @@ paths:
         - Store
       x-scope: write:store
       deprecated: true
-      summary: Stripe Connect payout-onboarding link (deprecated — payouts are stablecoin-only)
+      summary: Stripe Connect payout onboarding (retired — answers 410)
       description: |-
-        DEPRECATED. Seller payouts are paid ONLY in stablecoins since
+        RETIRED. Seller payouts are paid ONLY in stablecoins since
         2026-09-15: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron
         (minimum $15), on the 1st and 15th. The seller saves a wallet at
         https://www.getly.store/dashboard/settings?tab=payments — that step
-        is not available through the API. This endpoint still creates (or
-        reuses) a Stripe Connect Express account and returns an onboarding
-        link, but a connected account is not a payout route today: do not send
-        sellers here.
+        is not available through the API. Since 2026-09-23 this endpoint no
+        longer creates Stripe Connect accounts: after the usual 401/403 checks
+        it always answers 410 `payout_route_retired`, with the wallet setup
+        URL in `errorDetail.walletSetupUrl`. Do not retry it.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       x-errors:
         - unauthorized
         - insufficient_scope
-        - not_found
-        - idempotency_conflict
+        - payout_route_retired
         - rate_limited
       responses:
-        '200':
-          description: Onboarding link.
-          content:
-            application/json:
-              example:
-                success: true
-                data:
-                  url: https://connect.stripe.com/setup/e/acct_123/abcdef
-                  expiresAt: '2026-07-04T10:05:00.000Z'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/InsufficientScope'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/IdempotencyConflict'
+        '410':
+          description: Stripe Connect onboarding is retired (code payout_route_retired).
+          content:
+            application/json:
+              example:
+                success: false
+                error: Stripe Connect payout onboarding is retired. Payouts are stablecoin-only; the seller saves a wallet at https://www.getly.store/dashboard/settings?tab=payments.
+                errorDetail:
+                  code: payout_route_retired
+                  message: Stripe Connect payout onboarding is retired. Payouts are stablecoin-only; the seller saves a wallet at https://www.getly.store/dashboard/settings?tab=payments.
+                  hint: Seller payouts are stablecoin-only. The seller saves the wallet at https://www.getly.store/dashboard/settings?tab=payments — that step cannot be done through the API.
+                  docsUrl: https://www.getly.store/developers/docs#errors
+                  walletSetupUrl: https://www.getly.store/dashboard/settings?tab=payments
         '429':
           $ref: '#/components/responses/RateLimited'
   /api/v1/payouts:
@@ -3362,6 +3361,7 @@ components:
     plan_exists: 'A billing plan with this externalId already exists in your store. Update that plan, or send a different externalId.'
     plan_inactive: 'This billing plan is inactive. Activate it (PATCH isActive true) or create another plan before minting a checkout.'
     subscription_not_cancellable: 'The subscription has already ended, so there is nothing to cancel.'
+    payout_route_retired: 'Seller payouts are stablecoin-only: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15), on the 1st and 15th. The seller saves the wallet at https://www.getly.store/dashboard/settings?tab=payments — that step cannot be done through the API. Stripe Connect onboarding is no longer offered; retrying will not change this.'
     unknown_endpoint: 'No such endpoint. The full list is at https://www.getly.store/developers/docs (machine-readable: https://www.getly.store/llms-api.txt and https://www.getly.store/openapi.yaml). Images upload through POST /api/v1/uploads/images/presign and downloadable files through POST /api/v1/products/{id}/files/presign — there is no /api/v1/media, /api/v1/files or bare /api/v1/uploads.'
     internal_error: Unexpected server error — safe to retry with the same Idempotency-Key.
   schemas:
@@ -3421,6 +3421,7 @@ components:
         payment_method_unavailable — the rail is not live, use one from errorDetail.paymentMethods;
         already_completed — the checkout link was already paid;
         billing_not_approved / plan_exists / plan_inactive / subscription_not_cancellable — Getly Billing;
+        payout_route_retired — Stripe Connect onboarding is gone, the seller saves a stablecoin wallet in the dashboard, do not retry;
         unknown_endpoint — no such route, check the endpoint list;
         internal_error — server fault, safe to retry with the same Idempotency-Key.
       enum:
@@ -3455,6 +3456,7 @@ components:
         - plan_exists
         - plan_inactive
         - subscription_not_cancellable
+        - payout_route_retired
         - unknown_endpoint
         - internal_error
     ErrorEnvelope:

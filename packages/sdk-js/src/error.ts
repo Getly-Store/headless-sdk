@@ -40,6 +40,7 @@ export type GetlyErrorCode =
   | 'plan_exists'
   | 'plan_inactive'
   | 'subscription_not_cancellable'
+  | 'payout_route_retired'
   | 'unknown_endpoint'
   | 'internal_error';
 
@@ -99,6 +100,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<GetlyErrorCode>([
   'plan_exists',
   'plan_inactive',
   'subscription_not_cancellable',
+  'payout_route_retired',
   'unknown_endpoint',
   'internal_error',
 ]);

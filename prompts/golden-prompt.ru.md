@@ -200,5 +200,5 @@ checkout: только email), приход `sale.completed`. Потом ста�
 1. Регистрация на getly.store. 2. Создание API-ключа (магазин создастся сам).
 3. Сохранение кошелька для выплат на `/dashboard/settings?tab=payments` — выплаты идут
 в USDT/USDC в BNB Smart Chain (от $5) или в USDT в Tron (от $15), 1-го и 15-го. (Не
-отправляй на `POST /api/v1/store/payout-onboarding` — эта ссылка Stripe Connect
-устарела и выплат не даёт.) Всё остальное — твоя работа.
+отправляй на `POST /api/v1/store/payout-onboarding` — подключение Stripe Connect
+снято, эндпоинт отвечает 410 `payout_route_retired`.) Всё остальное — твоя работа.
