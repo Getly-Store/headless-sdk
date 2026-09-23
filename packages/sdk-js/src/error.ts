@@ -27,6 +27,7 @@ export type GetlyErrorCode =
   | 'expired'
   | 'license_invalid'
   | 'license_expired'
+  | 'key_not_available'
   | 'activation_limit_reached'
   | 'not_purchasable'
   | 'widget_disabled'
@@ -85,6 +86,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<GetlyErrorCode>([
   'expired',
   'license_invalid',
   'license_expired',
+  'key_not_available',
   'activation_limit_reached',
   'not_purchasable',
   'widget_disabled',

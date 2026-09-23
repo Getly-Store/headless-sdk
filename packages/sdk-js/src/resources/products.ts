@@ -17,11 +17,17 @@ import type {
   UploadFileInput,
 } from '../types.js';
 import { paginate } from './paginate.js';
+import { ProductKeysResource } from './product-keys.js';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024; // 2GB — platform hard limit
 
 export class ProductsResource {
-  constructor(private readonly http: HttpClient) {}
+  /** Seller key pool — your own license keys, handed out one per sale. */
+  readonly keys: ProductKeysResource;
+
+  constructor(private readonly http: HttpClient) {
+    this.keys = new ProductKeysResource(http);
+  }
 
   /** GET /api/v1/products — cursor-paginated list of your store's products. */
   async list(params: ProductListParams = {}): Promise<Page<Product>> {

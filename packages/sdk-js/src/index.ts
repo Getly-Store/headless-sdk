@@ -89,3 +89,4 @@ export {
 } from './webhooks.js';
 export type { VerifyWebhookSignatureInput, GetlyWebhookEvent, TypedGetlyWebhookEvent } from './webhooks.js';
 export * from './types.js';
+export { KEYS_PER_REQUEST_MAX } from './resources/product-keys.js';

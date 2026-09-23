@@ -66,6 +66,7 @@ Security: the key is only ever sent as `Authorization: Bearer …` to the config
 | Namespace | Methods |
 |---|---|
 | `getly.products` | `list`, `iterate`, `get`, `create`, `update`, `archive`, `publish`, `listFiles`, `presignFile`, `attachFile`, `uploadFile`, `createMany` |
+| `getly.products.keys` | `list`, `iterate`, `add`, `addMany`, `remove` — your own license-key pool |
 | `getly.posts` | `list`, `iterate`, `get`, `create`, `update`, `delete` |
 | `getly.coupons` | `list`, `iterate`, `create`, `update`, `delete` |
 | `getly.checkoutLinks` | `create`, `list`, `iterate`, `get` (status polling) |
@@ -83,6 +84,16 @@ Security: the key is only ever sent as `Authorization: Bearer …` to the config
 \* public — works **without** an API key (license checks from shipped software, storefront widgets, the Pay Widget).
 
 **Payments today.** Buyers pay with PayPal or USDT/USDC; card checkout is paused and may return — `publicStore.product()` returns the live `paymentMethods`. Seller payouts go out on the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15); the wallet is saved in the dashboard. `store.payoutOnboarding()` returns a Stripe Connect link that is no longer a payout route — do not send sellers there.
+
+## Sell your own license keys (key pool)
+
+```ts
+const product = await getly.products.create({ name: 'Game key', priceCents: 1500, keyPoolEnabled: true });
+await getly.products.keys.add(product.id, ['AAAA-BBBB-0001', 'AAAA-BBBB-0002']); // ≤5000 per call; addMany() chunks
+const pool = await getly.products.keys.list(product.id); // counts { available, issued, waiting } + masked keys
+```
+
+Each sale hands the buyer the next unsold key in the order you added them; `sale.completed` carries it as `items[].licenseKey` (`null` while the pool is empty — the buyer gets it by email as soon as you add more). `keyPoolEnabled` and `licenseKeysEnabled` (Getly-generated keys) are mutually exclusive. `keys.remove()` deletes an unsold key; an issued key answers `key_not_available`.
 
 ## Getly Billing (recurring plans for your own product)
 
@@ -119,7 +130,7 @@ try {
 }
 ```
 
-Code registry: `unauthorized`, `insufficient_scope`, `rate_limited`, `validation_failed`, `not_found`, `publish_requires_file`, `publish_requires_image`, `publish_requires_category`, `category_not_allowed`, `moderation_locked`, `not_publishable`, `idempotency_conflict`, `coupon_invalid`, `high_discount_ack_required`, `quota_exceeded`, `expired`, `license_invalid`, `license_expired`, `activation_limit_reached`, `not_purchasable`, `widget_disabled`, `widget_not_approved`, `origin_not_allowed`, `challenge_required`, `payment_method_unavailable`, `already_completed`, `billing_not_approved`, `plan_exists`, `plan_inactive`, `subscription_not_cancellable`, `unknown_endpoint`, `internal_error`.
+Code registry: `unauthorized`, `insufficient_scope`, `rate_limited`, `validation_failed`, `not_found`, `publish_requires_file`, `publish_requires_image`, `publish_requires_category`, `category_not_allowed`, `moderation_locked`, `not_publishable`, `idempotency_conflict`, `coupon_invalid`, `high_discount_ack_required`, `quota_exceeded`, `expired`, `license_invalid`, `license_expired`, `activation_limit_reached`, `not_purchasable`, `widget_disabled`, `widget_not_approved`, `origin_not_allowed`, `challenge_required`, `payment_method_unavailable`, `already_completed`, `key_not_available`, `billing_not_approved`, `plan_exists`, `plan_inactive`, `subscription_not_cancellable`, `unknown_endpoint`, `internal_error`.
 
 ## Idempotency & retries
 
@@ -168,7 +179,7 @@ if (!ok) return new Response('invalid signature', { status: 401 });
 
 Scheme: `X-Getly-Signature-V2: t=<unix>,v1=<hmacSha256(secret, t + "." + body)>`, timing-safe comparison, 300s replay tolerance. Using Next.js? `@getly/nextjs` wraps this into a ready route handler.
 
-Typed payloads: parse the body as `TypedGetlyWebhookEvent` and narrow on `event` (or use `isWebhookEvent(evt, 'sale.completed')`). `sale.completed` carries `buyerEmail` and `items[].orderItemId` / `isGift` — deliver your own license keys to `buyerEmail`. `WEBHOOK_EVENT_TYPES` lists all 18 subscribable events, including `billing.*`.
+Typed payloads: parse the body as `TypedGetlyWebhookEvent` and narrow on `event` (or use `isWebhookEvent(evt, 'sale.completed')`). `sale.completed` carries `buyerEmail` and `items[].orderItemId` / `isGift` / `licenseKey` — keys from your pool (or Getly-generated) arrive in `licenseKey`; if you issue keys yourself, send them to `buyerEmail`. `WEBHOOK_EVENT_TYPES` lists all 18 subscribable events, including `billing.*`.
 
 ## License keys (from your shipped software)
 

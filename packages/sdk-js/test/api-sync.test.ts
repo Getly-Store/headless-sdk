@@ -255,12 +255,13 @@ describe('webhook event registry', () => {
     const evt = {
       deliveryId: 'd1',
       event: 'sale.completed',
-      data: { orderId: 'o1', buyerId: 'u1', buyerEmail: 'jane@example.com', items: [{ orderItemId: 'i1', productId: 'p1', price: 900, sellerAmount: 810, isGift: false }], total: 900 },
+      data: { orderId: 'o1', buyerId: 'u1', buyerEmail: 'jane@example.com', items: [{ orderItemId: 'i1', productId: 'p1', price: 900, sellerAmount: 810, isGift: false, licenseKey: 'AAAA-0001' }], total: 900 },
       timestamp: 't',
     } as TypedGetlyWebhookEvent;
     if (isWebhookEvent(evt, 'sale.completed')) {
       expect(evt.data.buyerEmail).toBe('jane@example.com');
       expect(evt.data.items[0].orderItemId).toBe('i1');
+      expect(evt.data.items[0].licenseKey).toBe('AAAA-0001');
     } else {
       throw new Error('guard failed');
     }

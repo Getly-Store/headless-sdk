@@ -96,6 +96,10 @@ export interface Product {
   licenseActivationLimit: number;
   /** What the buyer may do with the file; null = not stated. Always present. */
   licenseType: ProductLicenseType | null;
+  /** Each buyer gets the next unsold key from YOUR pool (products.keys) instead of a Getly-generated key. */
+  keyPoolEnabled: boolean;
+  /** "Running low" email when available pool keys drop to this many (1-1000, default 5). */
+  keyPoolLowThreshold: number;
   /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period on a one-time payment. */
   accessMode: 'lifetime' | 'timed';
   /** Present when relations were loaded (GET single). The periods on offer, shortest first. */
@@ -188,6 +192,14 @@ export interface ProductCreateInput {
   /** What the buyer may do with the file. Optional; publishing does not require it. */
   licenseType?: ProductLicenseType | null;
   /**
+   * Sell YOUR OWN keys: each buyer gets the next unsold key from the pool
+   * (add them with products.keys.add once the product exists). Mutually
+   * exclusive with licenseKeysEnabled — both true is a 400.
+   */
+  keyPoolEnabled?: boolean;
+  /** 1-1000 (default 5): when the "running low" email is sent. */
+  keyPoolLowThreshold?: number;
+  /**
    * Timed access — sell access for a period on a ONE-TIME payment (no recurring
    * billing). The buyer picks a term, access ends on a date, buying again extends
    * it; your webhook endpoint receives access.expiring / access.expired. A timed
@@ -215,6 +227,9 @@ export interface ProductUpdateInput {
   licenseActivationLimit?: number;
   /** Set the licence, or `null` to clear it. */
   licenseType?: ProductLicenseType | null;
+  /** true turns licenseKeysEnabled off in the same write (and vice versa); both true is a 400. */
+  keyPoolEnabled?: boolean;
+  keyPoolLowThreshold?: number;
   accessMode?: 'lifetime' | 'timed';
   /** REPLACES the terms table: rows with an id are updated, rows left out are retired. */
   accessTerms?: AccessTermInput[];
@@ -275,6 +290,59 @@ export interface CreateManyOptions {
    * duplicating them.
    */
   idempotencyKeyPrefix?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Seller key pool (your own license keys)
+// ---------------------------------------------------------------------------
+
+export type ProductKeyStatus = 'available' | 'issued';
+
+export interface ProductKey {
+  id: string;
+  /** Masked (e.g. `ABCD…WXYZ`) — the plaintext is never returned. */
+  masked: string;
+  status: ProductKeyStatus | string;
+  issuedAt: string | null;
+  orderItemId: string | null;
+  /** The sale this key went to was refunded — revoke the key in your own system. */
+  refunded: boolean;
+}
+
+export interface ProductKeyPool {
+  keyPoolEnabled: boolean;
+  keyPoolLowThreshold: number;
+  counts: {
+    available: number;
+    issued: number;
+    /** Paid orders waiting because the pool ran out — filled the moment you add keys. */
+    waiting: number;
+  };
+  /** One page, in sale order. */
+  keys: ProductKey[];
+  limit: number;
+  offset: number;
+  /** available + issued. */
+  total: number;
+}
+
+export interface ProductKeyListParams {
+  /** 1-100, default 50. */
+  limit?: number;
+  offset?: number;
+}
+
+export interface ProductKeysAddResult {
+  added: number;
+  /** Already in the pool — not added. */
+  duplicates: number;
+  /** Repeated within this request — not added. */
+  duplicatesInInput: number;
+  /** Over 500 characters — not added. */
+  tooLong: number;
+  blank: number;
+  /** Waiting buyers who got a key from this batch. */
+  filled: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -951,6 +1019,12 @@ export interface SaleCompletedItem {
   sellerAmount: number;
   /** A gift: deliver its key to buyerEmail (the giver); the recipient's address is not shared. */
   isGift: boolean;
+  /**
+   * The key issued for this item (Getly-generated or from your key pool), or
+   * null when the product has no keys or the pool was empty — the buyer then
+   * gets the key by email as soon as you add more.
+   */
+  licenseKey: string | null;
 }
 
 export interface SaleCompletedPayload {
