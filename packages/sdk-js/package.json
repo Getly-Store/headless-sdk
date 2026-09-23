@@ -1,7 +1,7 @@
 {
   "name": "@getly/sdk",
-  "version": "0.2.0",
-  "description": "Zero-dependency TypeScript client for the Getly v1 API — products, posts, coupons, checkout links, license keys, webhooks.",
+  "version": "0.3.0",
+  "description": "Zero-dependency TypeScript client for the Getly v1 API — products, posts, coupons, checkout links, license keys, webhooks, Getly Billing subscriptions.",
   "license": "MIT",
   "type": "module",
   "repository": {

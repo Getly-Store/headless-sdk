@@ -99,7 +99,7 @@ describe('idempotency', () => {
     const sent = calls[0].headers['idempotency-key'];
     expect(sent).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(calls[0].headers['authorization']).toBe(`Bearer ${KEY}`);
-    expect(calls[0].headers['x-getly-client']).toBe('@getly/sdk/0.1.0');
+    expect(calls[0].headers['x-getly-client']).toBe('@getly/sdk/0.3.0');
   });
 
   it('honors a caller-provided idempotencyKey verbatim', async () => {

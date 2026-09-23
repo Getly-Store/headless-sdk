@@ -13,6 +13,7 @@
  * would change this function's signature).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { WebhookEventName, WebhookPayloadMap } from './types.js';
 
 export interface VerifyWebhookSignatureInput {
   /** EXACT raw request body string (await req.text() — do NOT re-serialize). */
@@ -72,8 +73,32 @@ export function verifyWebhookSignature(input: VerifyWebhookSignatureInput): bool
 /** Webhook delivery body shape (what Getly POSTs to your endpoint). */
 export interface GetlyWebhookEvent<T = Record<string, unknown>> {
   deliveryId?: string;
-  /** e.g. 'sale.completed', 'order.refunded', 'checkout_link.completed'. */
+  /** e.g. 'sale.completed', 'order.refunded', 'billing.subscription.renewed'. */
   event: string;
   data: T;
   timestamp?: string;
+}
+
+/**
+ * A delivery typed by its event name — narrow on `event` to get the exact
+ * payload shape:
+ *
+ *   const evt = JSON.parse(raw) as TypedGetlyWebhookEvent;
+ *   if (evt.event === 'sale.completed') evt.data.buyerEmail; // string | null
+ */
+export type TypedGetlyWebhookEvent = {
+  [K in WebhookEventName]: {
+    deliveryId: string;
+    event: K;
+    data: WebhookPayloadMap[K];
+    timestamp: string;
+  };
+}[WebhookEventName];
+
+/** Type guard: is this delivery the named event? */
+export function isWebhookEvent<K extends WebhookEventName>(
+  evt: { event: string },
+  name: K,
+): evt is { deliveryId: string; event: K; data: WebhookPayloadMap[K]; timestamp: string } {
+  return evt.event === name;
 }

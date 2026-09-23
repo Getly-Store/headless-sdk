@@ -147,8 +147,8 @@ describe('createMany — throttled batch with partial failure', () => {
         status: 429,
         body: {
           success: false,
-          error: 'Daily product creation cap reached (20 per day per API key)',
-          errorDetail: { code: 'quota_exceeded', message: 'Daily product creation cap reached (20 per day per API key)' },
+          error: 'Daily product creation cap reached (100 per day per API key)',
+          errorDetail: { code: 'quota_exceeded', message: 'Daily product creation cap reached (100 per day per API key)' },
         },
       },
     ]);

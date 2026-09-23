@@ -38,8 +38,12 @@ export class StoreResource {
 
   /**
    * POST /api/v1/store/payout-onboarding — Stripe Connect onboarding link.
-   * Open the returned url in a browser; it expires quickly, so request a
-   * fresh one each time.
+   *
+   * @deprecated Seller payouts are stablecoin-only since 2026-09-15: USDT/USDC
+   * on BNB Smart Chain (min $5) or USDT on Tron (min $15), on the 1st and 15th.
+   * The seller saves a wallet at
+   * https://www.getly.store/dashboard/settings?tab=payments. A Connect account
+   * is not a payout route, so do not send sellers to this link.
    */
   async payoutOnboarding(opts: MutationOptions = {}): Promise<PayoutOnboardingResult> {
     const res = await this.http.request<Envelope<PayoutOnboardingResult>>(

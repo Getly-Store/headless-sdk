@@ -15,6 +15,9 @@ export type GetlyErrorCode =
   | 'validation_failed'
   | 'not_found'
   | 'publish_requires_file'
+  | 'publish_requires_image'
+  | 'publish_requires_category'
+  | 'category_not_allowed'
   | 'moderation_locked'
   | 'not_publishable'
   | 'idempotency_conflict'
@@ -23,7 +26,20 @@ export type GetlyErrorCode =
   | 'quota_exceeded'
   | 'expired'
   | 'license_invalid'
+  | 'license_expired'
   | 'activation_limit_reached'
+  | 'not_purchasable'
+  | 'widget_disabled'
+  | 'widget_not_approved'
+  | 'origin_not_allowed'
+  | 'challenge_required'
+  | 'payment_method_unavailable'
+  | 'already_completed'
+  | 'billing_not_approved'
+  | 'plan_exists'
+  | 'plan_inactive'
+  | 'subscription_not_cancellable'
+  | 'unknown_endpoint'
   | 'internal_error';
 
 export interface RateLimitInfo {
@@ -57,6 +73,9 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<GetlyErrorCode>([
   'validation_failed',
   'not_found',
   'publish_requires_file',
+  'publish_requires_image',
+  'publish_requires_category',
+  'category_not_allowed',
   'moderation_locked',
   'not_publishable',
   'idempotency_conflict',
@@ -65,7 +84,20 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<GetlyErrorCode>([
   'quota_exceeded',
   'expired',
   'license_invalid',
+  'license_expired',
   'activation_limit_reached',
+  'not_purchasable',
+  'widget_disabled',
+  'widget_not_approved',
+  'origin_not_allowed',
+  'challenge_required',
+  'payment_method_unavailable',
+  'already_completed',
+  'billing_not_approved',
+  'plan_exists',
+  'plan_inactive',
+  'subscription_not_cancellable',
+  'unknown_endpoint',
   'internal_error',
 ]);
 
@@ -78,6 +110,8 @@ function codeFromStatus(status: number): GetlyErrorCode {
       return 'insufficient_scope';
     case 404:
       return 'not_found';
+    case 410:
+      return 'expired';
     case 429:
       return 'rate_limited';
     case 400:
@@ -120,6 +154,13 @@ export class GetlyError extends Error {
   readonly rateLimit: RateLimitInfo;
   /** Machine-readable publish blockers (422 not_publishable only). */
   readonly reasons?: PublishBlockedReason[];
+  /**
+   * Extra machine-readable fields the API merged into errorDetail, e.g.
+   * `paymentMethods` (payment_method_unavailable), `challengeSiteKey`
+   * (challenge_required), `requestAccessUrl` (widget_not_approved),
+   * `accessStatus` (billing_not_approved), `productUrl` (not_purchasable).
+   */
+  readonly details: Record<string, unknown>;
 
   constructor(
     message: string,
@@ -131,6 +172,7 @@ export class GetlyError extends Error {
       param?: string;
       rateLimit?: Partial<RateLimitInfo>;
       reasons?: PublishBlockedReason[];
+      details?: Record<string, unknown>;
     },
   ) {
     super(message);
@@ -147,6 +189,7 @@ export class GetlyError extends Error {
       retryAfterSeconds: opts.rateLimit?.retryAfterSeconds ?? null,
     };
     this.reasons = opts.reasons;
+    this.details = opts.details ?? {};
   }
 
   /** Build a GetlyError from a parsed error body + response headers. */
@@ -165,9 +208,15 @@ export class GetlyError extends Error {
     const reasons = Array.isArray(record.reasons)
       ? (record.reasons as PublishBlockedReason[])
       : undefined;
+    const STANDARD = new Set(['code', 'message', 'hint', 'docsUrl', 'param']);
+    const details: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(detail as Record<string, unknown>)) {
+      if (!STANDARD.has(k)) details[k] = v;
+    }
     return new GetlyError(message, {
       status,
       code,
+      details,
       hint: typeof detail.hint === 'string' ? detail.hint : undefined,
       docsUrl: typeof detail.docsUrl === 'string' ? detail.docsUrl : undefined,
       param: typeof detail.param === 'string' ? detail.param : undefined,

@@ -42,6 +42,12 @@ export interface MutationOptions {
 
 export type ProductStatus = 'draft' | 'active' | 'pending_review' | 'archived' | 'rejected';
 
+/**
+ * What the buyer may do with the file — shown next to the buy button, in the
+ * product FAQ and in the page's structured data. `null` = not stated.
+ */
+export type ProductLicenseType = 'personal' | 'commercial' | 'extended' | 'cc0' | 'custom';
+
 export interface ProductImage {
   id?: string;
   url: string;
@@ -88,6 +94,8 @@ export interface Product {
   tags: string[] | null;
   licenseKeysEnabled: boolean;
   licenseActivationLimit: number;
+  /** What the buyer may do with the file; null = not stated. Always present. */
+  licenseType: ProductLicenseType | null;
   /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period on a one-time payment. */
   accessMode: 'lifetime' | 'timed';
   /** Present when relations were loaded (GET single). The periods on offer, shortest first. */
@@ -154,11 +162,17 @@ export interface ProductCreateInput {
   /** Integer minor units — the preferred money field. */
   priceCents?: number;
   compareAtPriceCents?: number | null;
+  /**
+   * Category UUID from GET /api/categories. Required to publish (a draft may
+   * omit it); an unknown or malformed id is a 400, a system category answers
+   * category_not_allowed.
+   */
   categoryId?: string;
   tags?: string[];
   /**
-   * 'active' requires at least one downloadable file in `files` — otherwise
-   * the API answers publish_requires_file. Default: draft.
+   * 'active' requires at least one downloadable file in `files`, at least one
+   * image and a categoryId — otherwise publish_requires_file /
+   * publish_requires_image / publish_requires_category. Default: draft.
    */
   status?: 'active' | 'draft';
   /** Image URLs (external URLs are re-hosted to Getly storage). Max 20. */
@@ -171,6 +185,8 @@ export interface ProductCreateInput {
   licenseKeysEnabled?: boolean;
   /** 1-100 (default 3). */
   licenseActivationLimit?: number;
+  /** What the buyer may do with the file. Optional; publishing does not require it. */
+  licenseType?: ProductLicenseType | null;
   /**
    * Timed access — sell access for a period on a ONE-TIME payment (no recurring
    * billing). The buyer picks a term, access ends on a date, buying again extends
@@ -189,11 +205,16 @@ export interface ProductUpdateInput {
   compareAtPriceCents?: number | null;
   categoryId?: string;
   tags?: string[];
-  /** 'active' requires an attached file; moderation-locked products 403. */
+  /**
+   * 'active' requires an attached file, an image and a categoryId;
+   * moderation-locked products 403. categoryId cannot be cleared.
+   */
   status?: 'active' | 'draft' | 'archived';
   images?: Array<{ url: string; altText?: string }>;
   licenseKeysEnabled?: boolean;
   licenseActivationLimit?: number;
+  /** Set the licence, or `null` to clear it. */
+  licenseType?: ProductLicenseType | null;
   accessMode?: 'lifetime' | 'timed';
   /** REPLACES the terms table: rows with an id are updated, rows left out are retired. */
   accessTerms?: AccessTermInput[];
@@ -314,7 +335,8 @@ export type CouponType = 'percentage' | 'fixed';
 
 export interface Coupon {
   id: string;
-  storeId: string | null;
+  /** Coupons always belong to a store — platform-wide codes were retired. */
+  storeId: string;
   code: string;
   type: CouponType | string;
   /** percentage → 1-100; fixed → cents (see valueCents). */
@@ -438,7 +460,12 @@ export interface LicenseListParams extends CursorListParams {
 }
 
 export type LicenseValidateResult =
-  | { valid: false }
+  | {
+      valid: false;
+      /** Set only when a timed-access key's period has ended. */
+      reason?: 'expired';
+      expiresAt?: string;
+    }
   | {
       valid: true;
       productId: string | null;
@@ -446,6 +473,8 @@ export type LicenseValidateResult =
       activationLimit: number;
       activationCount: number;
       activationsRemaining: number;
+      /** End of the timed-access period the key was sold under; null = lifetime. */
+      expiresAt: string | null;
     };
 
 export interface LicenseActivateResult {
@@ -492,24 +521,32 @@ export interface UploadImageInput {
 // Webhook endpoints
 // ---------------------------------------------------------------------------
 
-export type WebhookEventType =
-  | 'sale.completed'
-  | 'product.created'
-  | 'product.updated'
-  | 'review.created'
-  | 'download.completed'
-  | 'refund.created'
-  | 'refund.completed'
-  | 'order.refunded'
-  | 'checkout_link.completed'
-  | 'license.activated'
-  | 'access.expiring'
-  | 'access.expired'
-  | 'dispute.created'
-  | 'dispute.resolved'
-  | 'subscription.created'
-  | 'subscription.cancelled'
-  | '*';
+/** Every event a webhook endpoint can subscribe to (the live platform list). */
+export const WEBHOOK_EVENT_TYPES = [
+  'sale.completed',
+  'product.created',
+  'product.updated',
+  'review.created',
+  'download.completed',
+  'refund.created',
+  'order.refunded',
+  'checkout_link.completed',
+  'license.activated',
+  'access.expiring',
+  'access.expired',
+  'dispute.created',
+  'dispute.resolved',
+  'billing.subscription.created',
+  'billing.subscription.renewed',
+  'billing.payment_failed',
+  'billing.subscription.canceled',
+  'billing.subscription.expired',
+] as const;
+
+export type WebhookEventName = (typeof WEBHOOK_EVENT_TYPES)[number];
+
+/** Subscribable event names, or '*' for all of them. */
+export type WebhookEventType = WebhookEventName | '*';
 
 export interface WebhookEndpoint {
   id: string;
@@ -570,17 +607,22 @@ export interface StoreUpdateInput {
   socialLinks?: Record<string, string>;
 }
 
+/**
+ * @deprecated Seller payouts are stablecoin-only (USDT/USDC on BNB Smart Chain,
+ * min $5; USDT on Tron, min $15). A Stripe Connect account is not a payout route.
+ */
 export interface PayoutOnboardingResult {
-  /** Stripe Connect onboarding link — open it in a browser. Short-lived. */
+  /** Stripe Connect onboarding link. */
   url: string;
   expiresAt?: string;
 }
 
 export interface UpcomingPayout {
-  date?: string;
-  amountCents?: number;
-  method?: string;
-  [key: string]: unknown;
+  /** Payout run date (1st or 15th, 03:00 UTC). */
+  date: string;
+  amountCents: number;
+  /** 'crypto' for every current payout; 'stripe' only on legacy Connect accounts (held until a wallet is saved). */
+  method: 'crypto' | 'stripe' | string;
 }
 
 export interface PayoutsSnapshot {
@@ -593,9 +635,9 @@ export interface PayoutsSnapshot {
   };
   thisPeriod: { incomeCents: number; expensesCents: number; netCents: number };
   lifetime: { incomeCents: number; paidOutCents: number; pendingCents: number };
-  upcomingPayouts: Array<UpcomingPayout | null>;
-  /** 'stripe' | 'crypto'. */
-  payoutMethod: string;
+  upcomingPayouts: UpcomingPayout[];
+  /** 'crypto' (USDT/USDC); 'stripe' only on legacy accounts whose balance is held until a wallet is saved. */
+  payoutMethod: 'crypto' | 'stripe' | string;
   minPayoutCents: number;
   cryptoWalletIncomplete: boolean;
 }
@@ -615,7 +657,8 @@ export interface OrderItem {
     status: string;
     total: number;
     createdAt: string;
-    buyer?: { id: string; name: string | null } | null;
+    /** The buyer, including the email they paid with (deliver your own license keys there). */
+    buyer?: OrderBuyer | null;
     [key: string]: unknown;
   };
   product?: { id: string; name: string; slug: string } | null;
@@ -637,10 +680,19 @@ export interface OrderListResult {
   hasMore: boolean;
 }
 
+export interface OrderBuyer {
+  id: string;
+  name: string | null;
+  /** The address the buyer paid with (a guest's checkout email counts). */
+  email: string | null;
+}
+
 export interface Order {
   id: string;
   buyerId: string | null;
-  buyer: { id: string; name: string | null } | null;
+  /** Same as buyer.email — the address to deliver your own license keys to. */
+  buyerEmail: string | null;
+  buyer: OrderBuyer | null;
   status: string;
   /** Cents. */
   total: number;
@@ -653,6 +705,9 @@ export interface Order {
 // Public storefront (no auth)
 // ---------------------------------------------------------------------------
 
+/** A buyer payment rail. Card checkout is paused today; read `paymentMethods`. */
+export type PaymentMethod = 'card' | 'paypal' | 'crypto';
+
 export interface PublicProduct {
   id: string;
   slug: string;
@@ -660,7 +715,11 @@ export interface PublicProduct {
   nameRu?: string;
   nameDe?: string;
   shortDescription: string | null;
+  shortDescriptionRu?: string;
+  shortDescriptionDe?: string;
   description?: string | null;
+  descriptionRu?: string;
+  descriptionDe?: string;
   /** Integer minor units. */
   priceCents: number;
   /** Legacy — same cents value as priceCents. */
@@ -670,10 +729,368 @@ export interface PublicProduct {
   reviewCount: number;
   images: Array<{ url: string; altText: string | null }>;
   urls: { product: string; buy: string };
+  /**
+   * Single-product endpoint only: the rails a buyer can pay with RIGHT NOW,
+   * in display order (card | paypal | crypto). Card is paused today.
+   */
+  paymentMethods?: PaymentMethod[];
 }
 
 export interface PublicStoreProductsResult {
   store: { id: string; name: string; slug: string };
   items: PublicProduct[];
   nextCursor: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Pay Widget public checkout (no auth)
+// ---------------------------------------------------------------------------
+
+export interface PublicCheckoutInput {
+  /** Widget mint: the store + product slugs (omit when passing linkId). */
+  storeSlug?: string;
+  productSlug?: string;
+  /** Or the id of an API-minted checkout link (its coupon/reference are reused). */
+  linkId?: string;
+  /** Rail to pay with. Must be live (see PublicProduct.paymentMethods); default = first live rail. */
+  method?: PaymentMethod;
+  /** Required for paypal and crypto — receipt and download links go here. */
+  email?: string;
+  /** Card only: 'inline' returns clientSecret + publishableKey. */
+  mode?: 'popup' | 'redirect' | 'inline';
+  /** https, ≤500 chars. */
+  successUrl?: string;
+  cancelUrl?: string;
+  /** Cloudflare Turnstile token when the previous call answered challenge_required. */
+  challengeToken?: string;
+}
+
+export interface PublicCheckoutResult {
+  method: PaymentMethod;
+  /** Hosted payment page (PayPal approval, crypto invoice or card checkout). Absent in card inline mode. */
+  url?: string;
+  linkId: string;
+  priceCents: number;
+  currency: 'USD';
+  /** Card only. */
+  sessionId?: string;
+  /** Card inline mode only. */
+  clientSecret?: string;
+  publishableKey?: string;
+}
+
+/** `check: true` — every configuration check, no payment. */
+export interface PublicCheckoutCheckResult {
+  check: 'ok';
+  productName: string;
+  productSlug: string;
+  priceCents: number;
+  currency: 'USD';
+  origin: string | null;
+  paymentMethods: PaymentMethod[];
+  note: string;
+}
+
+export interface PublicCheckoutStatus {
+  status: 'open' | 'completed' | 'expired';
+}
+
+// ---------------------------------------------------------------------------
+// Product files / analytics
+// ---------------------------------------------------------------------------
+
+export interface SalesAnalytics {
+  totalSales: number;
+  /** Seller share, integer cents. */
+  totalRevenue: number;
+  monthlySales: number;
+  monthlyRevenue: number;
+  averageOrderValue: number;
+  productCount: number;
+  totalDownloads: number;
+  /** Last 6 months. revenue is integer cents. */
+  salesByMonth: Array<{ month: string; sales: number; revenue: number }>;
+}
+
+// ---------------------------------------------------------------------------
+// Getly Billing — recurring plans for your OWN product (scopes read:billing / write:billing)
+// ---------------------------------------------------------------------------
+
+export type BillingIntervalUnit = 'day' | 'week' | 'month' | 'year';
+
+export interface BillingInterval {
+  unit: BillingIntervalUnit;
+  /** 1-52. */
+  count: number;
+}
+
+export interface BillingPlan {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Integer cents charged every interval. */
+  amount: number;
+  /** Same value as amount. */
+  amountCents: number;
+  currency: 'usd' | string;
+  interval: BillingInterval;
+  /** Your own plan id, echoed on webhooks. */
+  externalId: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface BillingPlanCreateInput {
+  /** 1-255 chars. */
+  name: string;
+  /** ≤2000 chars. */
+  description?: string | null;
+  /** Integer cents, minimum 50. */
+  amount: number;
+  /** Only 'usd' today. */
+  currency?: 'usd';
+  intervalUnit: BillingIntervalUnit;
+  /** 1-52, default 1 ("every 3 months" = month / 3). */
+  intervalCount?: number;
+  /** Your own plan id (1-128 chars); a duplicate answers 409 plan_exists. */
+  externalId?: string | null;
+}
+
+/**
+ * Amount / interval changes affect NEW subscriptions only; isActive=false
+ * stops new checkouts and leaves existing subscribers alone.
+ */
+export interface BillingPlanUpdateInput {
+  name?: string;
+  description?: string | null;
+  amount?: number;
+  intervalUnit?: BillingIntervalUnit;
+  intervalCount?: number;
+  externalId?: string | null;
+  isActive?: boolean;
+}
+
+export interface BillingPlanListParams {
+  active?: boolean;
+}
+
+export interface BillingCheckoutInput {
+  planId: string;
+  /** YOUR id for this customer (≤255 chars) — echoed as externalCustomerRef. */
+  customerRef?: string | null;
+  /** https URL on your site. */
+  successUrl: string;
+  /** https URL on your site. */
+  cancelUrl: string;
+  /** ≤2KB of string values, echoed on webhooks. */
+  metadata?: Record<string, string>;
+}
+
+export interface BillingCheckoutResult {
+  /** Hosted subscribe page on getly.store — valid 24h. */
+  url: string;
+  expiresAt: string;
+}
+
+export type BillingSubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'expired';
+
+export interface BillingSubscription {
+  id: string;
+  planId: string;
+  /** Present when the plan relation was loaded. */
+  plan?: {
+    id: string;
+    name: string;
+    amount: number;
+    amountCents: number;
+    currency: string;
+    interval: BillingInterval;
+    externalId: string | null;
+  };
+  /** The customerRef you sent at checkout. */
+  customerRef: string | null;
+  /**
+   * active · past_due (a card renewal failed) · canceled · expired (a PayPal or
+   * crypto period ran out unpaid). Treat active AND past_due as entitled until
+   * currentPeriodEnd.
+   */
+  status: BillingSubscriptionStatus | string;
+  /** 'stripe' (card) | 'paypal' | 'crypto'. */
+  paymentMethod: 'stripe' | 'paypal' | 'crypto' | string;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  endedAt: string | null;
+  createdAt: string | null;
+  metadata: Record<string, string> | null;
+}
+
+export interface BillingSubscriptionListParams {
+  status?: BillingSubscriptionStatus;
+  customerRef?: string;
+  planId?: string;
+  /** 1-100, default 50. */
+  limit?: number;
+  offset?: number;
+}
+
+export interface BillingSubscriptionListResult {
+  items: BillingSubscription[];
+  pagination: { limit: number; offset: number; hasMore: boolean };
+}
+
+// ---------------------------------------------------------------------------
+// Webhook payloads (the `data` of each delivery) — integer cents throughout
+// ---------------------------------------------------------------------------
+
+export interface SaleCompletedItem {
+  orderItemId: string;
+  productId: string | null;
+  price: number;
+  sellerAmount: number;
+  /** A gift: deliver its key to buyerEmail (the giver); the recipient's address is not shared. */
+  isGift: boolean;
+}
+
+export interface SaleCompletedPayload {
+  orderId: string;
+  buyerId: string;
+  /** The address the buyer paid with (a guest's checkout email counts). */
+  buyerEmail: string | null;
+  /** Your store's items only. */
+  items: SaleCompletedItem[];
+  total: number;
+  /** Present when the sale came from a checkout link. */
+  checkoutLinkId?: string;
+  reference?: string | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface ProductEventPayload {
+  productId: string;
+  name: string;
+  slug: string;
+  price: number;
+  status: string;
+}
+
+export interface ReviewCreatedPayload {
+  reviewId: string;
+  productId: string;
+  rating: number;
+  title: string | null;
+}
+
+export interface DownloadCompletedPayload {
+  downloadId: string;
+  productId: string | null;
+  orderItemId: string;
+  fileId: string | null;
+  fileName: string | null;
+  downloadCount: number;
+  remainingDownloads: number;
+  downloadedAt: string;
+}
+
+export interface RefundCreatedPayload {
+  refundRequestId: string;
+  orderId: string;
+  orderItemId: string | null;
+  productName: string | null;
+  amountCents: number;
+  currency: 'USD';
+  reason: string;
+  status: string;
+  requestedAt: string;
+}
+
+export interface OrderRefundedPayload {
+  orderId: string;
+  orderItemIds: string[];
+  amountCents: number;
+  currency: 'USD';
+  reason?: string;
+  refundedAt: string;
+}
+
+export interface CheckoutLinkCompletedPayload {
+  checkoutLinkId: string;
+  orderId: string;
+  reference: string | null;
+  metadata: Record<string, string> | null;
+  amountCents: number;
+  currency: 'USD';
+}
+
+export interface LicenseActivatedPayload {
+  licenseKeyId: string;
+  productId: string;
+  fingerprint: string;
+  activationCount: number;
+  activationLimit: number;
+}
+
+export interface AccessEventPayload {
+  orderItemId: string;
+  orderId: string;
+  productId: string | null;
+  productSlug: string | null;
+  durationDays: number | null;
+  expiresAt: string;
+  buyerEmail: string | null;
+}
+
+export interface DisputeEventPayload {
+  disputeId: string;
+  orderId: string | null;
+  orderItemId: string | null;
+  reason: string;
+  status: string;
+  /** dispute.resolved only. */
+  resolution?: string | null;
+  openedAt?: string;
+  resolvedAt?: string;
+}
+
+export interface BillingEventPayload {
+  event: string;
+  subscriptionId: string;
+  planId: string;
+  plan: BillingSubscription['plan'] | null;
+  /** The customerRef you sent at checkout. */
+  externalCustomerRef: string | null;
+  status: BillingSubscriptionStatus | string;
+  paymentMethod: 'stripe' | 'paypal' | 'crypto' | string;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  /** Renewals / first payment. */
+  paymentId?: string;
+  amountPaid?: number;
+  amountPaidCents?: number;
+  reason?: string;
+  metadata: Record<string, string> | null;
+}
+
+/** Event name → the `data` payload it carries. */
+export interface WebhookPayloadMap {
+  'sale.completed': SaleCompletedPayload;
+  'product.created': ProductEventPayload;
+  'product.updated': ProductEventPayload;
+  'review.created': ReviewCreatedPayload;
+  'download.completed': DownloadCompletedPayload;
+  'refund.created': RefundCreatedPayload;
+  'order.refunded': OrderRefundedPayload;
+  'checkout_link.completed': CheckoutLinkCompletedPayload;
+  'license.activated': LicenseActivatedPayload;
+  'access.expiring': AccessEventPayload;
+  'access.expired': AccessEventPayload;
+  'dispute.created': DisputeEventPayload;
+  'dispute.resolved': DisputeEventPayload;
+  'billing.subscription.created': BillingEventPayload;
+  'billing.subscription.renewed': BillingEventPayload;
+  'billing.payment_failed': BillingEventPayload;
+  'billing.subscription.canceled': BillingEventPayload;
+  'billing.subscription.expired': BillingEventPayload;
 }

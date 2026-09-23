@@ -1,6 +1,6 @@
 # @getly/sdk
 
-Zero-dependency TypeScript client for the [Getly](https://www.getly.store/developers) v1 API — run a digital-products store from code: products, blog posts, coupons, checkout links, license keys, webhooks.
+Zero-dependency TypeScript client for the [Getly](https://www.getly.store/developers) v1 API — run a digital-products store from code: products, blog posts, coupons, checkout links, license keys, webhooks, and Getly Billing subscriptions for your own product.
 
 - **Zero runtime dependencies** — built on global `fetch` (Node ≥ 18).
 - **Typed errors** — every failure throws `GetlyError` with a stable machine `code`, an actionable `hint`, and the rate-limit snapshot.
@@ -65,19 +65,41 @@ Security: the key is only ever sent as `Authorization: Bearer …` to the config
 
 | Namespace | Methods |
 |---|---|
-| `getly.products` | `list`, `iterate`, `get`, `create`, `update`, `archive`, `publish`, `presignFile`, `attachFile`, `uploadFile`, `createMany` |
+| `getly.products` | `list`, `iterate`, `get`, `create`, `update`, `archive`, `publish`, `listFiles`, `presignFile`, `attachFile`, `uploadFile`, `createMany` |
 | `getly.posts` | `list`, `iterate`, `get`, `create`, `update`, `delete` |
 | `getly.coupons` | `list`, `iterate`, `create`, `update`, `delete` |
 | `getly.checkoutLinks` | `create`, `list`, `iterate`, `get` (status polling) |
 | `getly.licenses` | `list`, `iterate`, `validate`*, `activate`*, `deactivate`* |
 | `getly.uploads` | `presignImage`, `uploadImage` |
 | `getly.webhookEndpoints` | `list`, `create`, `update`, `delete` |
-| `getly.store` | `get`, `create`, `update`, `payoutOnboarding` |
+| `getly.store` | `get`, `create`, `update`, `payoutOnboarding` (deprecated) |
 | `getly.payouts` | `get` |
-| `getly.orders` | `list`, `iterate`, `get` |
-| `getly.publicStore`* | `products`, `product`, `iterateProducts` |
+| `getly.orders` | `list`, `iterate`, `get` — each order carries the buyer's email |
+| `getly.analytics` | `get` |
+| `getly.billing` | `createCheckout`, `plans.{list,get,create,update}`, `subscriptions.{list,iterate,get,cancel}` |
+| `getly.publicStore`* | `products`, `product` (with `paymentMethods`), `iterateProducts` |
+| `getly.publicCheckout`* | `create`, `check`, `status` — the Pay Widget checkout |
 
-\* public — works **without** an API key (license checks from shipped software, storefront widgets).
+\* public — works **without** an API key (license checks from shipped software, storefront widgets, the Pay Widget).
+
+**Payments today.** Buyers pay with PayPal or USDT/USDC; card checkout is paused and may return — `publicStore.product()` returns the live `paymentMethods`. Seller payouts go out on the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15); the wallet is saved in the dashboard. `store.payoutOnboarding()` returns a Stripe Connect link that is no longer a payout route — do not send sellers there.
+
+## Getly Billing (recurring plans for your own product)
+
+```ts
+const plan = await getly.billing.plans.create({ name: 'Pro', amount: 1900, intervalUnit: 'month', externalId: 'pro-monthly' });
+const { url } = await getly.billing.createCheckout({
+  planId: plan.id,
+  customerRef: user.id,               // echoed on every billing.* webhook as externalCustomerRef
+  successUrl: 'https://your-app.com/welcome',
+  cancelUrl: 'https://your-app.com/pricing',
+});
+// later — the status check before granting access:
+const sub = await getly.billing.subscriptions.get(subscriptionId);
+const entitled = sub.status === 'active' || sub.status === 'past_due';
+```
+
+Writes need an approved Billing application (`billing_not_approved` until then — apply at `/dashboard/billing`); reads work immediately. Scopes `read:billing` / `write:billing`.
 
 ## Error handling
 
@@ -91,12 +113,13 @@ try {
     err.code;      // 'not_publishable' — stable machine code, branch on this
     err.hint;      // what to DO next (written for humans and LLMs)
     err.reasons;   // publish blockers: [{ code: 'missing_file', detail: '…' }]
+    err.details;   // extra errorDetail fields, e.g. paymentMethods, challengeSiteKey
     err.rateLimit; // { limit, remaining, resetSeconds, retryAfterSeconds }
   }
 }
 ```
 
-Code registry: `unauthorized`, `insufficient_scope`, `rate_limited`, `validation_failed`, `not_found`, `publish_requires_file`, `moderation_locked`, `not_publishable`, `idempotency_conflict`, `coupon_invalid`, `high_discount_ack_required`, `quota_exceeded`, `expired`, `license_invalid`, `activation_limit_reached`, `internal_error`.
+Code registry: `unauthorized`, `insufficient_scope`, `rate_limited`, `validation_failed`, `not_found`, `publish_requires_file`, `publish_requires_image`, `publish_requires_category`, `category_not_allowed`, `moderation_locked`, `not_publishable`, `idempotency_conflict`, `coupon_invalid`, `high_discount_ack_required`, `quota_exceeded`, `expired`, `license_invalid`, `license_expired`, `activation_limit_reached`, `not_purchasable`, `widget_disabled`, `widget_not_approved`, `origin_not_allowed`, `challenge_required`, `payment_method_unavailable`, `already_completed`, `billing_not_approved`, `plan_exists`, `plan_inactive`, `subscription_not_cancellable`, `unknown_endpoint`, `internal_error`.
 
 ## Idempotency & retries
 
@@ -125,7 +148,7 @@ const results = await getly.products.createMany(rows, {
   onProgress: (r, done, total) => console.log(`${done}/${total}`, r.ok),
 });
 // per-item: { index, ok, product | error }
-// quota_exceeded (20 products/day/key) stops the batch; re-run tomorrow with
+// quota_exceeded (100 products/day/key) stops the batch; re-run tomorrow with
 // the SAME prefix to resume.
 ```
 
@@ -145,11 +168,14 @@ if (!ok) return new Response('invalid signature', { status: 401 });
 
 Scheme: `X-Getly-Signature-V2: t=<unix>,v1=<hmacSha256(secret, t + "." + body)>`, timing-safe comparison, 300s replay tolerance. Using Next.js? `@getly/nextjs` wraps this into a ready route handler.
 
+Typed payloads: parse the body as `TypedGetlyWebhookEvent` and narrow on `event` (or use `isWebhookEvent(evt, 'sale.completed')`). `sale.completed` carries `buyerEmail` and `items[].orderItemId` / `isGift` — deliver your own license keys to `buyerEmail`. `WEBHOOK_EVENT_TYPES` lists all 18 subscribable events, including `billing.*`.
+
 ## License keys (from your shipped software)
 
 ```ts
 // No API key needed — safe to call from client apps:
 const check = await getly.licenses.validate({ key: userEnteredKey });
+// A timed-access key whose period ended answers { valid: false, reason: 'expired', expiresAt }.
 if (check.valid) {
   await getly.licenses.activate({ key: userEnteredKey, fingerprint: machineId, label: 'MacBook Pro' });
 }

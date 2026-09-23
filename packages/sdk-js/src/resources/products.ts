@@ -85,13 +85,23 @@ export class ProductsResource {
   /**
    * POST /api/v1/products/{id}/publish — one-call publish.
    * On 422 the thrown GetlyError has code 'not_publishable' and a
-   * machine-readable `reasons` array (missing_file, moderation_locked, …).
+   * machine-readable `reasons` array (missing_file, missing_image,
+   * no_category, description_too_short, moderation_locked, …).
    */
   async publish(id: string, opts: MutationOptions = {}): Promise<ProductWithModeration> {
     const res = await this.http.request<Envelope<ProductWithModeration>>(
       'POST',
       `/api/v1/products/${encodeURIComponent(id)}/publish`,
       { body: {}, idempotencyKey: opts.idempotencyKey },
+    );
+    return res.data;
+  }
+
+  /** GET /api/v1/products/{id}/files — downloadable files attached to a product. */
+  async listFiles(productId: string): Promise<ProductFile[]> {
+    const res = await this.http.request<Envelope<ProductFile[]>>(
+      'GET',
+      `/api/v1/products/${encodeURIComponent(productId)}/files`,
     );
     return res.data;
   }
@@ -168,7 +178,7 @@ export class ProductsResource {
 
   /**
    * Throttled batch create respecting the 30/min mutation sublimit and the
-   * 20/day cap. Never throws for individual items — returns per-item
+   * 100/day cap. Never throws for individual items — returns per-item
    * { ok, product | error }. Pass `idempotencyKeyPrefix` to make re-runs
    * replay already-created items instead of duplicating them.
    * On quota_exceeded the remaining items are marked failed without more
