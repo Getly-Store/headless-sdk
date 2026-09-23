@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('tool registry', () => {
-  it('exposes exactly 27 tools with stable names', () => {
+  it('exposes exactly 30 tools with stable names', () => {
     expect(TOOL_NAMES).toEqual([
       'list_products',
       'get_product',
@@ -26,6 +26,9 @@ describe('tool registry', () => {
       'archive_product',
       'upload_product_file',
       'upload_image',
+      'list_product_keys',
+      'add_product_keys',
+      'remove_product_key',
       'create_blog_post',
       'list_blog_posts',
       'create_coupon',
@@ -46,7 +49,7 @@ describe('tool registry', () => {
       'get_store',
       'get_pay_widget_code',
     ]);
-    expect(TOOLS).toHaveLength(27);
+    expect(TOOLS).toHaveLength(30);
   });
 
   it('annotations snapshot (readOnly / destructive / idempotent hints)', () => {
@@ -69,6 +72,9 @@ describe('tool registry', () => {
       archive_product: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       upload_product_file: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
       upload_image: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      list_product_keys: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      add_product_keys: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      remove_product_key: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       create_blog_post: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
       list_blog_posts: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       create_coupon: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -441,5 +447,72 @@ describe('orders, licenseType and billing tools', () => {
     const result = await tool('cancel_billing_subscription').handler({ subscriptionId: '00000000-0000-4000-8000-000000000002', confirm: true });
     expect(result.isError).toBeUndefined();
     expect(String(spy.mock.calls[0][0])).toContain('/api/v1/billing/subscriptions/00000000-0000-4000-8000-000000000002/cancel');
+  });
+});
+
+describe('key pool tools', () => {
+  const PID = '00000000-0000-4000-8000-000000000010';
+  beforeEach(() => {
+    process.env.GETLY_API_KEY = 'getly_sk_live_test_0000000000';
+  });
+
+  function stubJson(body: unknown, status = 200) {
+    const spy = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', spy);
+    return spy;
+  }
+
+  it('list_product_keys passes limit/offset', async () => {
+    const spy = stubJson({ success: true, data: { counts: { available: 3, issued: 1, waiting: 0 }, keys: [], total: 4 } });
+    const result = await tool('list_product_keys').handler({ productId: PID, limit: 10 });
+    expect(String(spy.mock.calls[0][0])).toContain(`/api/v1/products/${PID}/keys?limit=10`);
+    expect(JSON.parse(result.content[0].text).counts.available).toBe(3);
+  });
+
+  it('add_product_keys POSTs { keys } with an Idempotency-Key', async () => {
+    const spy = stubJson({ success: true, data: { added: 2, duplicates: 0, duplicatesInInput: 0, tooLong: 0, blank: 0, filled: 0 } }, 201);
+    const result = await tool('add_product_keys').handler({ productId: PID, keys: ['A-1', 'A-2'] });
+    const [, init] = spy.mock.calls[0];
+    expect(init?.method).toBe('POST');
+    expect((init?.headers as Record<string, string>)['Idempotency-Key']).toBeTruthy();
+    expect(JSON.parse(String(init?.body))).toEqual({ keys: ['A-1', 'A-2'] });
+    expect(JSON.parse(result.content[0].text).result.added).toBe(2);
+    // the tool never echoes the plaintext keys back
+    expect(result.content[0].text).not.toContain('A-1');
+  });
+
+  it('add_product_keys refuses more than 5000 keys without calling the API', async () => {
+    const spy = vi.fn(() => {
+      throw new Error('API must not be called');
+    });
+    vi.stubGlobal('fetch', spy);
+    const keys = Array.from({ length: 5001 }, (_, i) => `K-${i}`);
+    const result = await tool('add_product_keys').handler({ productId: PID, keys });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('5000');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('remove_product_key surfaces key_not_available', async () => {
+    stubJson(
+      {
+        success: false,
+        error: 'Only an unsold key can be removed',
+        errorDetail: { code: 'key_not_available', message: 'Only an unsold key can be removed', hint: 'Re-read the list.' },
+      },
+      409,
+    );
+    const result = await tool('remove_product_key').handler({ productId: PID, keyId: '00000000-0000-4000-8000-000000000011' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('key_not_available');
+  });
+
+  it('update_product forwards keyPoolEnabled / keyPoolLowThreshold', async () => {
+    const spy = stubJson({ success: true, data: { id: PID, name: 'K', slug: 'k', status: 'draft', priceCents: 900, compareAtPriceCents: null, keyPoolEnabled: true, keyPoolLowThreshold: 10 } });
+    const result = await tool('update_product').handler({ productId: PID, keyPoolEnabled: true, keyPoolLowThreshold: 10 });
+    expect(JSON.parse(String(spy.mock.calls[0][1]?.body))).toEqual({ keyPoolEnabled: true, keyPoolLowThreshold: 10 });
+    expect(JSON.parse(result.content[0].text).updated).toMatchObject({ keyPoolEnabled: true, keyPoolLowThreshold: 10 });
   });
 });

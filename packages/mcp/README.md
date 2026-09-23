@@ -53,18 +53,21 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 
 > `npx @getly/mcp init` detects installed clients and offers to write these files for you (merging safely with existing config). `init --print` only prints the snippets.
 
-## Tools (27)
+## Tools (30)
 
 | Tool | What it does | Hints / gates |
 |---|---|---|
 | `list_products` | List store products (cursor-paginated, filters) | read-only |
 | `get_product` | Full product detail (files, images, reviews, URLs) | read-only |
-| `create_product` | Create a **draft** product (money = integer cents, optional `licenseType`) | 100/day cap |
-| `update_product` | Edit name/price/description/images/tags/`licenseType` | idempotent; cannot publish/archive |
+| `create_product` | Create a **draft** product (money = integer cents, optional `licenseType`, `keyPoolEnabled`) | 100/day cap |
+| `update_product` | Edit name/price/description/images/tags/`licenseType`/`keyPoolEnabled`/`keyPoolLowThreshold` | idempotent; cannot publish/archive |
 | `publish_product` | Make a draft publicly purchasable (needs a file, an image and a category) | **requires `confirm: true`** |
 | `archive_product` | Remove a product from sale (soft delete) | **destructive, requires `confirm: true`** |
 | `upload_product_file` | Upload a local file as the buyer download (≤2GB) | slow for large files |
 | `upload_image` | Upload a local image, returns a URL for products/posts | ≤10MB |
+| `list_product_keys` | Your own license-key pool: available / issued / waiting + masked keys | read-only |
+| `add_product_keys` | Add your license keys; each sale hands out the next one | ≤5000 per call |
+| `remove_product_key` | Remove an unsold key (issued keys stay) | destructive hint |
 | `create_blog_post` | Markdown blog post; `[product:slug]` embeds a buy card | 5/day cap |
 | `list_blog_posts` | List posts | read-only |
 | `create_coupon` | Percentage or fixed-cents discount | **50%+ requires `confirm: true`**; 30/day cap |
@@ -86,6 +89,8 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `get_pay_widget_code` | Embed snippet for a Buy button on the user's own site | read-only |
 
 **Timed access.** `create_product` and `update_product` accept `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents / label / isActive) to sell access for a period on a one-time payment — no recurring billing. On update the array replaces the table: rows with an `id` are updated, rows left out are retired. The store's webhook endpoint receives `access.expiring` (7 days before the end) and `access.expired`.
+
+**Your own license keys.** Set `keyPoolEnabled: true` on the product and add keys with `add_product_keys`: each sale hands the buyer the next unsold key, and the `sale.completed` webhook carries it as `items[].licenseKey`. Waiting buyers (pool empty) get their key the moment more are added. Mutually exclusive with `licenseKeysEnabled` (Getly-generated keys).
 
 **Getly Billing.** The billing tools sell recurring access to the user's *own* product (a SaaS, community or tool on their site) — not a catalogue listing. Writes need an approved Billing application (`billing_not_approved` until the user applies at `/dashboard/billing`). Subscribers pay with PayPal or USDT/USDC today (one payment buys one period) or by card when that rail is live.
 

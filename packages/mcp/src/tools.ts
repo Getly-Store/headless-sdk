@@ -1,5 +1,5 @@
 /**
- * Getly MCP tool registry — 27 tools.
+ * Getly MCP tool registry — 30 tools.
  *
  * Safety model:
  * - The API key comes ONLY from the GETLY_API_KEY environment variable.
@@ -127,6 +127,12 @@ const LICENSE_TYPES = ['personal', 'commercial', 'extended', 'cc0', 'custom'] as
 const licenseTypeDescription =
   'What the buyer may do with the file: personal, commercial, extended, cc0 or custom. Shown next to the buy button and in the product FAQ. Optional — publishing does not require it, but ask the user rather than guessing: it states their rights, not yours.';
 
+const keyPoolEnabledSchema = z.boolean().optional()
+  .describe("Sell YOUR OWN license keys: each buyer gets the next unsold key from the pool (add them with add_product_keys). Mutually exclusive with licenseKeysEnabled (Getly-generated keys) — turning one on turns the other off; both true is rejected.");
+const keyPoolLowThresholdSchema = z.number().int().min(1).max(1000).optional()
+  .describe('Send the "running low" email when available pool keys drop to this many (1-1000, default 5)');
+const KEYS_PER_CALL_MAX = 5000;
+
 const billingPlanIdParam = z.string().uuid().describe('Billing plan id (uuid)');
 const billingSubscriptionIdParam = z.string().uuid().describe('Billing subscription id (uuid)');
 const BILLING_NOTE =
@@ -141,6 +147,8 @@ interface V1ProductLike {
   compareAtPriceCents: number | null;
   licenseKeysEnabled?: boolean;
   licenseType?: string | null;
+  keyPoolEnabled?: boolean;
+  keyPoolLowThreshold?: number;
   /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period. */
   accessMode?: 'lifetime' | 'timed' | string;
   accessTerms?: Array<{ id: string; durationDays: number; priceCents: number; compareAtPriceCents: number | null; label: string | null; isActive: boolean }>;
@@ -161,6 +169,7 @@ function projectProduct(p: V1ProductLike) {
     compareAtPriceCents: p.compareAtPriceCents,
     licenseKeysEnabled: p.licenseKeysEnabled,
     licenseType: p.licenseType ?? null,
+    ...(p.keyPoolEnabled !== undefined ? { keyPoolEnabled: p.keyPoolEnabled, keyPoolLowThreshold: p.keyPoolLowThreshold } : {}),
     accessMode: p.accessMode ?? 'lifetime',
     ...(p.accessTerms ? { accessTerms: p.accessTerms } : {}),
     category: p.category ? { name: p.category.name, slug: p.category.slug } : null,
@@ -277,6 +286,8 @@ export const TOOLS: GetlyTool[] = [
       licenseActivationLimit: z.number().int().min(1).max(100).optional()
         .describe('Activation seats per license key (default 3)'),
       licenseType: z.enum(LICENSE_TYPES).optional().describe(licenseTypeDescription),
+      keyPoolEnabled: keyPoolEnabledSchema,
+      keyPoolLowThreshold: keyPoolLowThresholdSchema,
       accessMode: z.enum(['lifetime', 'timed']).optional()
         .describe("How it is sold. 'timed' = access for a period on a ONE-TIME payment (no recurring billing): the buyer picks a term, access ends on a date, buying again extends it. Default 'lifetime'."),
       accessTerms: z.array(z.object({
@@ -305,6 +316,8 @@ export const TOOLS: GetlyTool[] = [
           licenseKeysEnabled: args.licenseKeysEnabled,
           licenseActivationLimit: args.licenseActivationLimit,
           licenseType: args.licenseType,
+          keyPoolEnabled: args.keyPoolEnabled,
+          keyPoolLowThreshold: args.keyPoolLowThreshold,
           accessMode: args.accessMode,
           accessTerms: args.accessTerms,
           status: 'draft',
@@ -344,6 +357,8 @@ export const TOOLS: GetlyTool[] = [
       licenseActivationLimit: z.number().int().min(1).max(100).optional(),
       licenseType: z.enum(LICENSE_TYPES).nullable().optional()
         .describe(`${licenseTypeDescription} null clears it.`),
+      keyPoolEnabled: keyPoolEnabledSchema,
+      keyPoolLowThreshold: keyPoolLowThresholdSchema,
       accessMode: z.enum(['lifetime', 'timed']).optional()
         .describe("How it is sold. 'timed' = access for a period on a ONE-TIME payment (no recurring billing): the buyer picks a term, access ends on a date, buying again extends it. Default 'lifetime'."),
       accessTerms: z.array(z.object({
@@ -484,6 +499,72 @@ export const TOOLS: GetlyTool[] = [
         url: publicUrl,
         note: 'Use this URL as a product image or a blog post cover within 24 hours, or it will be garbage-collected.',
       });
+    }),
+  },
+
+
+  // -------------------------------------------------------------- key pool --
+  {
+    name: 'list_product_keys',
+    description:
+      "Show a product's own-license-key pool: counts (available / issued / waiting — paid orders waiting because the pool ran out) and a page of MASKED keys in sale order (the plaintext is never returned). refunded=true on an issued key means that sale was refunded — tell the user to revoke the key in their own system. Read-only.",
+    annotations: { title: 'List product keys', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      productId: productIdParam,
+      limit: z.number().int().min(1).max(100).optional().describe('Page size (default 50)'),
+      offset: z.number().int().min(0).optional(),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/products/${args.productId}/keys`, {
+        query: { limit: args.limit as number | undefined, offset: args.offset as number | undefined },
+      });
+      return json(env.data);
+    }),
+  },
+
+  {
+    name: 'add_product_keys',
+    description:
+      "Add the user's own license keys to a product's pool (side effect: each future sale hands the buyer the next key, in the order given; buyers already waiting get one immediately). Up to 5000 keys per call, each at most 500 characters; keys are trimmed, blanks dropped, duplicates counted but not added. The product needs keyPoolEnabled (set it with update_product). Keys are secrets: never echo them back in chat.",
+    annotations: { title: 'Add product keys' },
+    requiresAuth: true,
+    inputSchema: {
+      productId: productIdParam,
+      keys: z.array(z.string()).min(1).max(KEYS_PER_CALL_MAX)
+        .describe('The keys, one per element, in the order they should be sold (max 5000 per call)'),
+    },
+    handler: guarded(true, async (args) => {
+      const keys = args.keys as string[];
+      if (!Array.isArray(keys) || keys.length === 0) return refusal('keys must be a non-empty array of strings.');
+      if (keys.length > KEYS_PER_CALL_MAX) {
+        return refusal(`Too many keys in one call (${keys.length}). The API accepts at most ${KEYS_PER_CALL_MAX} — split the list and call again.`);
+      }
+      const env = await apiRequest<Record<string, number>>(`api/v1/products/${args.productId}/keys`, {
+        method: 'POST',
+        idempotent: true,
+        body: { keys },
+      });
+      return json({ result: env.data });
+    }),
+  },
+
+  {
+    name: 'remove_product_key',
+    description:
+      "Remove one UNSOLD key from a product's pool (get its id from list_product_keys). An issued key is the record of a sale and cannot be removed (key_not_available).",
+    annotations: { title: 'Remove product key', destructiveHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      productId: productIdParam,
+      keyId: z.string().uuid().describe('Key id from list_product_keys'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<{ id: string; removed: boolean }>(
+        `api/v1/products/${args.productId}/keys/${args.keyId}`,
+        { method: 'DELETE' },
+      );
+      return json(env.data);
     }),
   },
 

@@ -1,6 +1,6 @@
 /**
  * Boot the BUILT server over stdio and drive it with raw JSON-RPC:
- * initialize → notifications/initialized → tools/list. Asserts all 27 tools
+ * initialize → notifications/initialized → tools/list. Asserts all 30 tools
  * are exposed with their annotations. Builds the package first if needed.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -67,7 +67,7 @@ afterAll(() => {
 });
 
 describe('stdio server (built dist)', () => {
-  it('answers initialize and lists all 27 tools with annotations', async () => {
+  it('answers initialize and lists all 30 tools with annotations', async () => {
     const init = await request(1, 'initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
@@ -82,7 +82,7 @@ describe('stdio server (built dist)', () => {
     const list = await request(2, 'tools/list');
     const tools = (list.result as { tools: Array<{ name: string; description?: string; annotations?: Record<string, unknown> }> }).tools;
 
-    expect(tools).toHaveLength(27);
+    expect(tools).toHaveLength(30);
     const byName = new Map(tools.map((t) => [t.name, t]));
     for (const name of [
       'list_products', 'get_product', 'create_product', 'update_product',
