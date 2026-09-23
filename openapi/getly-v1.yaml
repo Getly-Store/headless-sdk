@@ -1,6 +1,6 @@
 # Getly v1 API — OpenAPI 3.1 specification.
 # Single source of truth for the SDK method names (operationId), the MCP tool
-# names, the /developers/api reference and the generated llms.txt.
+# names, the /developers/docs reference and the generated llms.txt.
 # Mirrored to the platform at https://www.getly.store/openapi.yaml.
 #
 # Formatting contract (scripts/generate-llms-txt.mjs parses this file with a
@@ -44,10 +44,17 @@ info:
     - Rate limits: every v1 response carries `X-RateLimit-Limit`,
       `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the window
       resets). 429s also carry `Retry-After` (seconds). Throttle proactively when
-      X-RateLimit-Remaining gets low. Daily creation caps (products 20/day,
+      X-RateLimit-Remaining gets low. Daily creation caps (products 100/day,
       posts 5/day, coupons 30/day per key) return code `quota_exceeded`.
     - CORS: all v1 routes answer OPTIONS preflight and send
       `Access-Control-Allow-Origin: *`.
+    - Payments: buyers pay with PayPal or stablecoins (USDT/USDC on BNB Smart
+      Chain, Tron, Ethereum, Polygon or Solana). Card checkout is paused and may
+      return; the public product endpoint's `paymentMethods` array says which
+      rails are live right now (card | paypal | crypto). Seller payouts go out on
+      the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) or USDT on
+      Tron (minimum $15).
+    - Coupons always belong to a store — there are no platform-wide codes.
   x-quickstart:
     - title: List your products
       curl: |-
@@ -76,6 +83,45 @@ info:
       `X-Getly-Signature: sha256=<hmacSha256(secret, rawBody)>`. The endpoint
       secret is returned exactly once at creation. Subscribing to '*' receives
       every event.
+
+      `sale.completed` payload: `orderId`, `buyerId`, `buyerEmail` (the address the
+      buyer paid with; a guest's checkout email counts. Deliver your own license
+      keys here), `items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`,
+      `isGift`) and `total`. Amounts are integer cents and cover your store's
+      items only. `checkoutLinkId`, `reference` and `metadata` are added when the
+      sale came from a checkout link. For an item with `isGift: true`, send its key
+      to buyerEmail (the giver). The gift recipient's address is not shared.
+
+      Delivery body: `{ "deliveryId", "event", "data": <payload>, "timestamp" }`,
+      with the event name also in the `X-Getly-Event` header. Payloads (all
+      money integer cents):
+      - `product.created` / `product.updated`: `productId`, `name`, `slug`,
+        `price`, `status`.
+      - `review.created`: `reviewId`, `productId`, `rating`, `title` (may be null).
+      - `download.completed`: `downloadId`, `productId`, `orderItemId`, `fileId`,
+        `fileName`, `downloadCount`, `remainingDownloads`, `downloadedAt`.
+      - `refund.created` (a buyer asked; the decision arrives later as
+        order.refunded): `refundRequestId`, `orderId`, `orderItemId`,
+        `productName`, `amountCents`, `currency`, `reason`, `status`,
+        `requestedAt`.
+      - `order.refunded`: `orderId`, `orderItemIds[]`, `amountCents`, `currency`,
+        `reason?`, `refundedAt`.
+      - `checkout_link.completed`: `checkoutLinkId`, `orderId`, `reference`,
+        `metadata`, `amountCents`, `currency`.
+      - `license.activated`: `licenseKeyId`, `productId`, `fingerprint`,
+        `activationCount`, `activationLimit`.
+      - `access.expiring` (7 days before) / `access.expired`: `orderItemId`,
+        `orderId`, `productId`, `productSlug`, `durationDays`, `expiresAt`,
+        `buyerEmail`.
+      - `dispute.created` / `dispute.resolved`: `disputeId`, `orderId`,
+        `orderItemId`, `reason`, `status`, `resolution` (resolved only),
+        `openedAt?`, `resolvedAt?`.
+      - `billing.*`: `event`, `subscriptionId`, `planId`, `plan` (id, name,
+        amount, amountCents, currency, interval, externalId),
+        `externalCustomerRef` (the customerRef you sent at checkout), `status`,
+        `paymentMethod` (stripe | paypal | crypto), `currentPeriodStart`,
+        `currentPeriodEnd`, `cancelAtPeriodEnd`, `metadata`; renewals add
+        `paymentId`, `amountPaid`, `amountPaidCents`.
     signatureHeader: X-Getly-Signature-V2
     toleranceSeconds: 300
     events:
@@ -85,14 +131,18 @@ info:
       - review.created
       - download.completed
       - refund.created
-      - refund.completed
       - order.refunded
       - checkout_link.completed
       - license.activated
+      - access.expiring
+      - access.expired
       - dispute.created
       - dispute.resolved
-      - subscription.created
-      - subscription.cancelled
+      - billing.subscription.created
+      - billing.subscription.renewed
+      - billing.payment_failed
+      - billing.subscription.canceled
+      - billing.subscription.expired
 servers:
   - url: https://www.getly.store
 security:
@@ -105,7 +155,24 @@ tags:
   - name: Coupons
     description: Store discount codes.
   - name: Checkout Links
-    description: Instant pay links with lazy Stripe session creation.
+    description: Instant pay links; the payment session is created only when the buyer opens the link.
+  - name: Billing
+    description: |-
+      Getly Billing — recurring plans for the seller's OWN product (a SaaS,
+      community or tool hosted on your site). Scopes read:billing / write:billing.
+      Not a marketplace listing: the plan never appears in the catalogue and the
+      subscriber lands back on your site. Writes require an approved application
+      (the seller applies at /dashboard/billing with a public website and a
+      description of what is sold; until approval every write answers 403
+      billing_not_approved, reads keep working). The take is the own-traffic rate
+      (10%). The hosted page offers the rails that are live: PayPal and
+      USDT/USDC today, where one payment buys ONE period, the subscriber is
+      reminded seven days before the end and an unpaid period closes with
+      billing.subscription.expired; a card subscription (when the card rail is
+      live) renews by itself. Subscribers cancel at
+      https://www.getly.store/subscriptions and keep access to the end of the
+      paid period. Every billing.* webhook carries externalCustomerRef.
+      Landing: https://www.getly.store/sell/billing
   - name: Licenses
     description: License keys — public validate/activate/deactivate + seller list.
   - name: Uploads
@@ -113,7 +180,7 @@ tags:
   - name: Webhook Endpoints
     description: Webhook endpoint management.
   - name: Store
-    description: Store profile, creation and payout onboarding.
+    description: Store profile and creation.
   - name: Orders
     description: Read-only orders of the key's store.
   - name: Analytics
@@ -187,6 +254,8 @@ paths:
                       status: active
                       licenseKeysEnabled: false
                       licenseActivationLimit: 3
+                      licenseType: commercial
+                      accessMode: lifetime
                       createdVia: api
                       urls:
                         product: https://www.getly.store/product/notion-startup-os-lx2a9f
@@ -211,9 +280,18 @@ paths:
       description: |-
         Accepts priceCents (preferred, integer minor units) or the deprecated
         dollar `price`. A product cannot be created directly as `active`
-        without at least one downloadable file — create a draft, attach files,
-        then publish. Stores with 0 completed sales get `pending_review`
-        instead of `active` (first-sale trust gate). Daily cap 20 products/key.
+        without at least one downloadable file, at least one image and a
+        `categoryId` — create a draft, attach what is missing, then publish.
+        `categoryId` must be a UUID from GET /api/categories; an unknown or
+        malformed value is a 400, and a system category answers
+        category_not_allowed. Stores with 0 completed sales get `pending_review`
+        instead of `active` (first-sale trust gate). Daily cap 100 products/key.
+        licenseType (personal / commercial / extended / cc0 / custom) states what
+        the buyer may do with the file — shown next to the buy button, in the
+        product FAQ and in the page's structured data. Optional: publishing does
+        not require it, but a listing without one answers the buyer's first
+        question with nothing.
+        Timed access: send accessMode "timed" and accessTerms[] (durationDays 1–3650, unique; priceCents ≥ 0; optional compareAtPriceCents above priceCents; optional label) to sell access for a period on a one-time payment — the buyer picks a term, access ends on a date, and your endpoint receives access.expiring (7 days before) and access.expired webhooks. The catalogue price becomes the cheapest active term. A timed product cannot be published without an active term. On PATCH, accessTerms replaces the table (rows with an id are updated, missing rows are retired, never deleted). Licence keys sold under a term stop validating when it ends (license_expired).
         Provenance is recorded as createdVia="api".
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -222,6 +300,9 @@ paths:
         - insufficient_scope
         - validation_failed
         - publish_requires_file
+        - publish_requires_image
+        - publish_requires_category
+        - category_not_allowed
         - quota_exceeded
         - idempotency_conflict
         - rate_limited
@@ -242,6 +323,15 @@ paths:
               status: draft
               licenseKeysEnabled: true
               licenseActivationLimit: 3
+              licenseType: commercial
+              accessMode: timed
+              accessTerms:
+                - durationDays: 30
+                  priceCents: 900
+                - durationDays: 365
+                  priceCents: 7900
+                  compareAtPriceCents: 10800
+                  label: Season pass
               images:
                 - url: https://cdn.getly.store/images/api/store-uuid/abc123.webp
                   altText: Dashboard preview
@@ -271,6 +361,7 @@ paths:
                   status: draft
                   licenseKeysEnabled: true
                   licenseActivationLimit: 3
+                  licenseType: commercial
                   createdVia: api
                   attachedFiles: 1
                   urls:
@@ -288,7 +379,7 @@ paths:
                   code: publish_requires_file
                   message: A product cannot be published (status "active") without at least one downloadable file.
                   hint: 'Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.'
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -296,17 +387,17 @@ paths:
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
         '429':
-          description: Rate limited, or the 20 products/day creation cap was hit (code quota_exceeded).
+          description: Rate limited, or the 100 products/day creation cap was hit (code quota_exceeded).
           content:
             application/json:
               example:
                 success: false
-                error: Daily product creation cap reached (20 per day per API key)
+                error: Daily product creation cap reached (100 per day per API key)
                 errorDetail:
                   code: quota_exceeded
-                  message: Daily product creation cap reached (20 per day per API key)
+                  message: Daily product creation cap reached (100 per day per API key)
                   hint: Daily creation cap reached for this API key. Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
   /api/v1/products/{id}:
     get:
       operationId: getProduct
@@ -337,6 +428,7 @@ paths:
                   status: active
                   licenseKeysEnabled: true
                   licenseActivationLimit: 3
+                  licenseType: commercial
                   images:
                     - url: https://cdn.getly.store/images/api/store-uuid/abc123.webp
                       altText: Dashboard preview
@@ -369,10 +461,13 @@ paths:
       description: |-
         Updatable: name, description, shortDescription, status (active/draft/
         archived only), categoryId, tags, priceCents, compareAtPriceCents,
-        licenseKeysEnabled, licenseActivationLimit, images (full replacement).
-        Setting status "active" requires at least one downloadable file, and a
+        licenseKeysEnabled, licenseActivationLimit, licenseType (enum or null to
+        clear), images (full replacement).
+        Setting status "active" requires at least one downloadable file, at
+        least one image and a categoryId (publish_requires_category), and a
         product in pending_review/rejected cannot be self-published
-        (moderation_locked). Providing `images` replaces the whole set.
+        (moderation_locked). categoryId must be a UUID from GET /api/categories
+        and cannot be cleared. Providing `images` replaces the whole set.
       parameters:
         - $ref: '#/components/parameters/ProductId'
       x-errors:
@@ -381,6 +476,9 @@ paths:
         - not_found
         - validation_failed
         - publish_requires_file
+        - publish_requires_image
+        - publish_requires_category
+        - category_not_allowed
         - moderation_locked
         - rate_limited
       requestBody:
@@ -405,6 +503,7 @@ paths:
                   status: active
                   licenseKeysEnabled: true
                   licenseActivationLimit: 3
+                  licenseType: commercial
                   urls:
                     product: https://www.getly.store/product/notion-startup-os-lx2a9f
                     buy: https://www.getly.store/product/notion-startup-os-lx2a9f
@@ -424,7 +523,7 @@ paths:
                   code: moderation_locked
                   message: This product is under review and cannot be published until approved.
                   hint: This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products — do not retry automatically.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -472,8 +571,10 @@ paths:
       description: |-
         Flips the product to "active". On failure returns 422 with code
         not_publishable and a `reasons` array — each entry has a machine
-        `code` (missing_file | moderation_locked | already_active) and a
-        `detail` explaining what to do. Stores with 0 completed sales get
+        `code` (missing_file | missing_image | no_category |
+        description_too_short | name_too_long | publisher_check_failed |
+        moderation_locked | already_active) and a `detail` explaining what to
+        do. Stores with 0 completed sales get
         pending_review instead of active (first-sale trust gate).
       parameters:
         - $ref: '#/components/parameters/ProductId'
@@ -520,7 +621,7 @@ paths:
                   code: not_publishable
                   message: Product is not publishable
                   hint: Fix every entry in `reasons` (each has a machine code and a detail explaining what to do), then call publish again.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
                 reasons:
                   - code: missing_file
                     detail: 'Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files.'
@@ -623,7 +724,7 @@ paths:
                   code: validation_failed
                   message: fileUrl must be an upload URL issued by this API for your own store (use the presign sub-route)
                   hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
                   param: fileUrl
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -876,7 +977,7 @@ paths:
                   code: quota_exceeded
                   message: Daily post creation cap reached (5 posts per day per API key)
                   hint: Daily creation cap reached for this API key. Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
   /api/v1/posts/{id}:
     get:
       operationId: getPost
@@ -1105,7 +1206,7 @@ paths:
                   code: high_discount_ack_required
                   message: 'This coupon gives a 90%+ discount — pass acknowledgeHighDiscount: true to confirm'
                   hint: 'Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.'
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
                   param: acknowledgeHighDiscount
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1122,7 +1223,7 @@ paths:
                   code: validation_failed
                   message: A coupon with this code already exists
                   hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
                   param: code
         '429':
           description: Rate limited, or the 30 coupons/day cap was hit (code quota_exceeded).
@@ -1135,7 +1236,7 @@ paths:
                   code: quota_exceeded
                   message: Daily coupon creation cap reached (30/day per API key)
                   hint: Daily creation cap reached for this API key. Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
   /api/v1/coupons/{id}:
     patch:
       operationId: updateCoupon
@@ -1182,7 +1283,7 @@ paths:
                   code: validation_failed
                   message: Field "value" is immutable after creation — create a new coupon and deactivate this one instead
                   hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
                   param: value
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1234,9 +1335,349 @@ paths:
                   code: validation_failed
                   message: Coupon already used — deactivate it instead (PATCH isActive:false)
                   hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '429':
           $ref: '#/components/responses/RateLimited'
+  /api/v1/billing/plans:
+    get:
+      operationId: listBillingPlans
+      tags:
+        - Billing
+      x-scope: read:billing
+      summary: List your billing plans
+      parameters:
+        - name: active
+          in: query
+          required: false
+          description: Filter — true or false.
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - rate_limited
+      responses:
+        '200':
+          description: Your store's plans, newest first.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: 7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    name: Pro
+                    description: Everything in Free plus priority support.
+                    amount: 1900
+                    amountCents: 1900
+                    currency: usd
+                    interval:
+                      unit: month
+                      count: 1
+                    externalId: pro-monthly
+                    isActive: true
+                    createdAt: '2026-09-08T09:00:00.000Z'
+    post:
+      operationId: createBillingPlan
+      tags:
+        - Billing
+      x-scope: write:billing
+      summary: Create a billing plan
+      description: |
+        A plan is an amount in integer cents (minimum 50) charged every
+        interval. intervalUnit is day, week, month or year; intervalCount
+        1-52 (default 1) — so "every 3 months" is month/3 and "every 2 weeks"
+        is week/2. Only usd today. externalId is your own plan id, echoed in
+        webhooks. 409 plan_exists when a plan with the same externalId exists.
+        Requires an approved Billing application — 403 billing_not_approved
+        otherwise (apply at /dashboard/billing).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Pro
+              description: Everything in Free plus priority support.
+              amount: 1900
+              intervalUnit: month
+              intervalCount: 1
+              externalId: pro-monthly
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - billing_not_approved
+        - validation_failed
+        - plan_exists
+        - rate_limited
+      responses:
+        '201':
+          description: The plan.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: 7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                  name: Pro
+                  description: Everything in Free plus priority support.
+                  amount: 1900
+                  amountCents: 1900
+                  currency: usd
+                  interval:
+                    unit: month
+                    count: 1
+                  externalId: pro-monthly
+                  isActive: true
+                  createdAt: '2026-09-08T09:00:00.000Z'
+  /api/v1/billing/plans/{id}:
+    get:
+      operationId: getBillingPlan
+      tags:
+        - Billing
+      x-scope: read:billing
+      summary: Get a billing plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: The plan (same shape as the list item).
+    patch:
+      operationId: updateBillingPlan
+      tags:
+        - Billing
+      x-scope: write:billing
+      summary: Update a billing plan
+      description: |
+        Any of name, description, amount, intervalUnit, intervalCount,
+        externalId, isActive. Changing amount or interval only affects NEW
+        subscriptions; existing subscribers keep the price they signed up at.
+        isActive=false stops new checkouts and leaves existing subscriptions
+        untouched.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              amount: 2400
+              isActive: true
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - billing_not_approved
+        - validation_failed
+        - not_found
+        - plan_exists
+        - rate_limited
+      responses:
+        '200':
+          description: The updated plan.
+  /api/v1/billing/checkout:
+    post:
+      operationId: createBillingCheckout
+      tags:
+        - Billing
+      x-scope: write:billing
+      summary: Mint a hosted subscribe page for one customer
+      description: |
+        Returns a URL on getly.store where the customer signs in (or creates
+        a Getly account), sees the plan and pays with PayPal or USDT/USDC
+        (or a card, while the card rail is live). The link
+        is signed and valid for 24 hours. customerRef (≤255 chars) is YOUR
+        id for this customer and is echoed on every billing.* webhook and on
+        the subscription object as externalCustomerRef. successUrl and
+        cancelUrl must be https URLs on your site. metadata: up to 2 KB of
+        string values, echoed on webhooks. The price is re-read from the plan
+        when the session is created — nothing on the page is trusted for money.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              planId: 7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+              customerRef: user_8841
+              successUrl: https://your-app.com/welcome
+              cancelUrl: https://your-app.com/pricing
+              metadata:
+                seat: gold
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - billing_not_approved
+        - validation_failed
+        - not_found
+        - plan_inactive
+        - rate_limited
+      responses:
+        '201':
+          description: The hosted page.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  url: https://www.getly.store/billing/subscribe/7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f?t=eyJ…
+                  expiresAt: '2026-09-09T09:00:00.000Z'
+  /api/v1/billing/subscriptions:
+    get:
+      operationId: listBillingSubscriptions
+      tags:
+        - Billing
+      x-scope: read:billing
+      summary: List subscriptions to your plans (limit/offset)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - past_due
+              - canceled
+              - expired
+        - name: customerRef
+          in: query
+          required: false
+          description: Your own customer id, as sent at checkout.
+          schema:
+            type: string
+        - name: planId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - validation_failed
+        - rate_limited
+      responses:
+        '200':
+          description: Page of subscriptions, newest first.
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: 9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b
+                    planId: 7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    plan:
+                      id: 7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                      name: Pro
+                      amount: 1900
+                      amountCents: 1900
+                      currency: usd
+                      interval:
+                        unit: month
+                        count: 1
+                      externalId: pro-monthly
+                    customerRef: user_8841
+                    status: active
+                    paymentMethod: paypal
+                    currentPeriodStart: '2026-09-08T09:14:00.000Z'
+                    currentPeriodEnd: '2026-10-08T09:14:00.000Z'
+                    cancelAtPeriodEnd: false
+                    canceledAt: null
+                    endedAt: null
+                    createdAt: '2026-09-08T09:14:00.000Z'
+                    metadata:
+                      seat: gold
+                pagination:
+                  limit: 50
+                  offset: 0
+                  hasMore: false
+  /api/v1/billing/subscriptions/{id}:
+    get:
+      operationId: getBillingSubscription
+      tags:
+        - Billing
+      x-scope: read:billing
+      summary: Get one subscription — the status check before granting access
+      description: |
+        status is active, past_due (a card renewal failed; the card
+        processor retries and the subscriber has been told), canceled (ended
+        after a cancellation) or expired (a PayPal or crypto period ran out
+        unpaid). paymentMethod is stripe (card), paypal or crypto. Treat active
+        and past_due as "still entitled" until currentPeriodEnd.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - not_found
+        - rate_limited
+      responses:
+        '200':
+          description: The subscription (same shape as the list item).
+  /api/v1/billing/subscriptions/{id}/cancel:
+    post:
+      operationId: cancelBillingSubscription
+      tags:
+        - Billing
+      x-scope: write:billing
+      summary: Stop renewal at the end of the paid period
+      description: |
+        Never an immediate cut-off: the subscriber keeps what they paid for.
+        A card subscription is set to cancel at period end and your endpoint
+        receives billing.subscription.canceled when it ends; a PayPal or crypto
+        subscription simply is not reminded to pay again and ends with
+        billing.subscription.expired. 409 subscription_not_cancellable when
+        it already ended. Idempotent: a second call returns the same object.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-errors:
+        - unauthorized
+        - insufficient_scope
+        - billing_not_approved
+        - not_found
+        - subscription_not_cancellable
+        - rate_limited
+      responses:
+        '200':
+          description: The subscription with cancelAtPeriodEnd=true.
   /api/v1/checkout-links:
     get:
       operationId: listCheckoutLinks
@@ -1303,8 +1744,9 @@ paths:
         the sale.completed / checkout_link.completed webhooks. Naturally
         idempotent: an open, unexpired link with the same product + coupon +
         reference is returned (200) instead of minting a new one (201).
-        Default expiry 7 days (expiresInHours 1-720). The Stripe session is
-        created lazily at click time, never here.
+        Default expiry 7 days (expiresInHours 1-720). The payment session
+        (PayPal order or crypto invoice, or a card session while the card rail
+        is live) is created only when the buyer opens the link, never here.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       x-errors:
@@ -1361,7 +1803,7 @@ paths:
                   code: coupon_invalid
                   message: Coupon does not exist, is inactive, exhausted or expired
                   hint: The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
                   param: couponCode
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1380,7 +1822,7 @@ paths:
                   code: not_publishable
                   message: Product status is 'draft' — only active products can be sold via checkout links
                   hint: 'Publish the product first: POST /api/v1/products/{id}/publish.'
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '429':
           $ref: '#/components/responses/RateLimited'
   /api/v1/checkout-links/{id}:
@@ -1438,10 +1880,13 @@ paths:
       description: |-
         NO auth — this is the URL you hand to buyers. Validates the link at
         click time (product still active, seller not suspended, coupon still
-        valid), lazily creates the Stripe Checkout Session and 302-redirects
-        the buyer into payment with the coupon auto-applied. Stale/expired/
-        completed links redirect to the product page (full-price purchase stays
-        possible) — never a dead end. Per-IP velocity limited.
+        valid) and sends the buyer into payment with the coupon auto-applied.
+        While card checkout is paused it 302-redirects to
+        https://www.getly.store/pay/link/{linkId}, where the buyer enters an
+        email and pays with PayPal or USDT/USDC; with the card rail live it
+        creates a card checkout session instead. Stale/expired/completed links
+        redirect to the product page (full-price purchase stays possible) —
+        never a dead end. Per-IP velocity limited.
       parameters:
         - name: linkId
           in: path
@@ -1453,7 +1898,7 @@ paths:
       x-errors: []
       responses:
         '302':
-          description: Redirect to Stripe Checkout (happy path), or to the product page / homepage for stale links.
+          description: Redirect to /pay/link/{linkId} (PayPal / crypto), to a card checkout while the card rail is live, or to the product page / homepage for stale links.
   /api/v1/public/checkout:
     post:
       operationId: createPublicCheckout
@@ -1463,17 +1908,30 @@ paths:
       x-public: true
       summary: Mint a Pay Widget checkout (buyer-facing, no auth)
       description: |-
-        NO auth — this is what the embeddable pay.js Buy button calls from a
-        seller's own website. Given a store slug + product slug it mints a
-        one-shot checkout for that product and returns either a hosted Stripe
-        Checkout url (popup / redirect) or an embedded clientSecret (inline).
-        The PRICE IS ALWAYS READ FROM THE PRODUCT ROW — any price the browser
-        sends is ignored. Only active, fixed-price (> 0) products of a
+        NO auth — this is what the embeddable pay.js Buy button (and the
+        /pay/link/{linkId} page behind a /go link) calls. Name the product with
+        storeSlug + productSlug (a widget mint), or with the linkId of an
+        API-minted checkout link (its coupon, affiliate code, reference and
+        success URL are reused). `method` picks the rail — card, paypal or
+        crypto — and must be one of the rails that are live right now (read
+        `paymentMethods` from GET /api/v1/public/stores/{slug}/products/{productSlug});
+        a rail that is not live answers 409 payment_method_unavailable with the
+        current `paymentMethods` in errorDetail. Omitted, the first live rail is
+        used. PayPal and crypto need the buyer's `email` BEFORE the redirect
+        (the receipt and download links go there). Card checkout is paused
+        today. The response is a hosted payment `url` to open in a popup or the
+        same tab (card inline mode returns clientSecret + publishableKey
+        instead). The PRICE IS ALWAYS READ FROM THE PRODUCT ROW — any price the
+        browser sends is ignored. Only active, fixed-price (> 0) products of a
         non-suspended seller are sellable; free / pay-what-you-want / unknown
-        products return not_purchasable (or a leak-safe not_found). Protected by
-        layered anti-abuse: per-IP / per-product / per-origin velocity limits,
-        an optional origin allowlist, a per-store kill switch, a concurrent-open
-        cap and (for untrusted stores) a Cloudflare Turnstile challenge. You
+        products return not_purchasable (or a leak-safe not_found). A widget
+        mint needs a store approved for the Pay Widget (403
+        widget_not_approved otherwise — request access at /dashboard/pay-widget)
+        and passes layered anti-abuse: per-IP / per-product / per-origin
+        velocity limits, an optional origin allowlist, a per-store kill switch,
+        a concurrent-open cap and (for untrusted stores) a Cloudflare Turnstile
+        challenge. `check: true` runs every configuration check and stops
+        before any payment (returns check ok with the live paymentMethods). You
         normally never call this directly — embed the widget from /pay-widget.
       parameters:
         - name: Origin
@@ -1486,9 +1944,14 @@ paths:
         - validation_failed
         - not_found
         - not_purchasable
+        - widget_not_approved
         - widget_disabled
         - origin_not_allowed
         - challenge_required
+        - payment_method_unavailable
+        - already_completed
+        - expired
+        - quota_exceeded
         - rate_limited
       requestBody:
         required: true
@@ -1497,25 +1960,27 @@ paths:
             example:
               storeSlug: acme-studio
               productSlug: icon-pack-pro
+              method: paypal
+              email: buyer@example.com
               mode: popup
               challengeToken: turnstile-token-when-challenged
       responses:
         '200':
-          description: Checkout minted. popup / redirect return url; inline returns clientSecret + publishableKey. All amounts integer cents.
+          description: Checkout minted — `method` says which rail, `url` is the hosted payment page. Card inline mode returns clientSecret + publishableKey instead of url. All amounts integer cents.
           content:
             application/json:
               example:
                 success: true
                 data:
-                  url: https://checkout.stripe.com/c/pay/cs_test_a1b2c3
-                  sessionId: cs_test_a1b2c3
+                  method: paypal
+                  url: https://www.paypal.com/checkoutnow?token=5O190127TN364715T
                   linkId: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
                   priceCents: 2900
                   currency: USD
         '400':
           $ref: '#/components/responses/ValidationFailed'
         '403':
-          description: Widget disabled for the store, origin not allowed, or a Turnstile challenge is required. For challenge_required the errorDetail carries challengeSiteKey.
+          description: Widget not approved or disabled for the store, origin not allowed, or a Turnstile challenge is required. For challenge_required the errorDetail carries challengeSiteKey; for widget_not_approved it carries requestAccessUrl.
           content:
             application/json:
               example:
@@ -1528,6 +1993,22 @@ paths:
                   docsUrl: https://www.getly.store/pay-widget
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: The requested rail is not live (payment_method_unavailable — errorDetail.paymentMethods lists the live ones), or the checkout link was already paid (already_completed).
+          content:
+            application/json:
+              example:
+                success: false
+                error: card payments are not available right now
+                errorDetail:
+                  code: payment_method_unavailable
+                  message: card payments are not available right now
+                  docsUrl: https://www.getly.store/developers/docs#errors
+                  paymentMethods:
+                    - paypal
+                    - crypto
+        '410':
+          description: The checkout link has expired (code expired).
         '429':
           $ref: '#/components/responses/RateLimited'
   /api/v1/public/checkout/{linkId}/status:
@@ -1631,8 +2112,11 @@ paths:
       description: |-
         Call this from your shipped software to check a buyer's license. NO
         auth header needed; rate-limited per IP (30/min). Every negative case
-        returns the same `{ valid: false }` (no oracle). Optionally pin the
-        check to a productId.
+        returns the same `{ valid: false }` (no oracle), except a key sold
+        under a timed-access term that has ended, which answers
+        `{ valid: false, reason: "expired", expiresAt }`. A valid key carries
+        `expiresAt` (null for lifetime keys). Optionally pin the check to a
+        productId.
       x-errors:
         - validation_failed
         - rate_limited
@@ -1657,6 +2141,7 @@ paths:
                   activationLimit: 3
                   activationCount: 1
                   activationsRemaining: 2
+                  expiresAt: null
         '400':
           $ref: '#/components/responses/ValidationFailed'
         '429':
@@ -1678,6 +2163,7 @@ paths:
       x-errors:
         - validation_failed
         - license_invalid
+        - license_expired
         - activation_limit_reached
         - rate_limited
       requestBody:
@@ -1712,7 +2198,7 @@ paths:
                   code: license_invalid
                   message: License key not found or deactivated
                   hint: The license key does not exist or was deactivated.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '409':
           description: All activation seats are in use.
           content:
@@ -1724,7 +2210,7 @@ paths:
                   code: activation_limit_reached
                   message: All 3 activation seats are in use
                   hint: All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '429':
           $ref: '#/components/responses/RateLimited'
   /api/v1/licenses/deactivate:
@@ -1771,7 +2257,7 @@ paths:
                   code: license_invalid
                   message: License key not found or deactivated
                   hint: The license key does not exist or was deactivated.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '429':
           $ref: '#/components/responses/RateLimited'
   /api/v1/webhook-endpoints:
@@ -1841,6 +2327,8 @@ paths:
                 - sale.completed
                 - checkout_link.completed
                 - license.activated
+                - access.expiring
+                - access.expired
       responses:
         '201':
           description: Endpoint created — `secret` is shown only once.
@@ -1856,6 +2344,8 @@ paths:
                     - sale.completed
                     - checkout_link.completed
                     - license.activated
+                    - access.expiring
+                    - access.expired
                   isActive: true
                   createdAt: '2026-07-04T10:00:00.000Z'
                   secret: whsec_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a
@@ -2012,7 +2502,7 @@ paths:
         - Public
       x-public: true
       summary: Get one active product of a store (PUBLIC, no auth)
-      description: Same shape as the public list plus full description fields. Non-active products (draft/pending/rejected/archived) read as 404. CDN-cached (s-maxage=300).
+      description: Same shape as the public list plus full description fields and `paymentMethods` — the buyer rails live right now, in display order (card | paypal | crypto; card is paused today). The Pay Widget draws one button per entry. Non-active products (draft/pending/rejected/archived) read as 404. CDN-cached (s-maxage=300).
       parameters:
         - name: slug
           in: path
@@ -2053,6 +2543,9 @@ paths:
                   urls:
                     product: https://www.getly.store/product/notion-startup-os-lx2a9f
                     buy: https://www.getly.store/product/notion-startup-os-lx2a9f
+                  paymentMethods:
+                    - paypal
+                    - crypto
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -2151,7 +2644,7 @@ paths:
                   code: validation_failed
                   message: You already have a store
                   hint: Use GET /api/v1/store to read it and PATCH /api/v1/store to update it.
-                  docsUrl: https://www.getly.store/developers/api#errors
+                  docsUrl: https://www.getly.store/developers/docs#errors
         '429':
           $ref: '#/components/responses/RateLimited'
     patch:
@@ -2199,12 +2692,17 @@ paths:
       tags:
         - Store
       x-scope: write:store
-      summary: Get a Stripe Connect payout-onboarding link
+      deprecated: true
+      summary: Stripe Connect payout-onboarding link (deprecated — payouts are stablecoin-only)
       description: |-
-        Creates (or reuses) the Stripe Connect Express account for the key's
-        user and returns a fresh onboarding account-link URL. The URL is
-        short-lived — send the seller there promptly. This is one of the few
-        steps that must finish in a browser (Stripe identity collection).
+        DEPRECATED. Seller payouts are paid ONLY in stablecoins since
+        2026-09-15: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron
+        (minimum $15), on the 1st and 15th. The seller saves a wallet at
+        https://www.getly.store/dashboard/settings?tab=payments — that step
+        is not available through the API. This endpoint still creates (or
+        reuses) a Stripe Connect Express account and returns an onboarding
+        link, but a connected account is not a payout route today: do not send
+        sellers here.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       x-errors:
@@ -2244,8 +2742,11 @@ paths:
       description: |-
         Requires read:store OR read:analytics. Same single source of truth as
         the dashboard payouts page, reconciled with the 1st/15th payout cron.
-        All amounts are integer cents. `method` per upcoming payout is stripe
-        or crypto depending on the seller's payout preference.
+        All amounts are integer cents. Payouts go out in USDT/USDC on BNB
+        Smart Chain (minimum $5) or USDT on Tron (minimum $15); `method` is
+        crypto for them. `stripe` appears only for older accounts still set to
+        the retired Stripe Connect route — their balance is held until a
+        wallet is saved (cryptoWalletIncomplete / payoutMethod tell you).
       x-errors:
         - unauthorized
         - insufficient_scope
@@ -2277,15 +2778,15 @@ paths:
                   upcomingPayouts:
                     - date: '2026-07-15T03:00:00.000Z'
                       amountCents: 15200
-                      method: stripe
+                      method: crypto
                     - date: '2026-08-01T03:00:00.000Z'
                       amountCents: 0
-                      method: stripe
+                      method: crypto
                     - date: '2026-08-15T03:00:00.000Z'
                       amountCents: 0
-                      method: stripe
-                  payoutMethod: stripe
-                  minPayoutCents: 1000
+                      method: crypto
+                  payoutMethod: crypto
+                  minPayoutCents: 500
                   cryptoWalletIncomplete: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2303,7 +2804,8 @@ paths:
       description: |-
         NOTE — this endpoint uses legacy offset pagination (?page from 1,
         ?limit 1-50), NOT cursors. Returns order items of your store with the
-        parent order and product; buyer email is never included. price,
+        parent order and product, including the buyer's email (order.buyer.email)
+        so you can deliver license keys. price,
         sellerAmount and platformAmount are integer cents.
       parameters:
         - name: page
@@ -2346,6 +2848,7 @@ paths:
                       buyer:
                         id: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
                         name: Jane Buyer
+                        email: jane@example.com
                     product:
                       id: 3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f
                       name: Notion Startup OS
@@ -2367,7 +2870,7 @@ paths:
         - Orders
       x-scope: read:orders
       summary: Get an order (items filtered to your store)
-      description: 403 when the order contains no items from your store. Buyer email is never included. total and item amounts are integer cents.
+      description: 403 when the order contains no items from your store. Includes buyerEmail (also buyer.email) so you can deliver license keys. total and item amounts are integer cents.
       parameters:
         - name: id
           in: path
@@ -2391,9 +2894,11 @@ paths:
                 data:
                   id: 6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b
                   buyerId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                  buyerEmail: jane@example.com
                   buyer:
                     id: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
                     name: Jane Buyer
+                    email: jane@example.com
                   status: completed
                   total: 2900
                   createdAt: '2026-07-04T11:02:33.000Z'
@@ -2468,7 +2973,7 @@ components:
         Scopes: read:products, write:products, read:orders, read:store,
         write:store, read:analytics, webhooks:manage, read:posts, write:posts,
         read:coupons, write:coupons, read:licenses, write:licenses,
-        checkout:create.
+        checkout:create, read:billing, write:billing.
   parameters:
     Cursor:
       name: cursor
@@ -2568,7 +3073,7 @@ components:
               code: unauthorized
               message: Unauthorized
               hint: 'Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys — read it from an environment variable, never hardcode it.'
-              docsUrl: https://www.getly.store/developers/api#errors
+              docsUrl: https://www.getly.store/developers/docs#errors
     InsufficientScope:
       description: The API key is missing the required scope (named in `param`).
       content:
@@ -2580,7 +3085,7 @@ components:
               code: insufficient_scope
               message: 'Missing scope: write:products'
               hint: Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
-              docsUrl: https://www.getly.store/developers/api#errors
+              docsUrl: https://www.getly.store/developers/docs#errors
               param: write:products
     NotFound:
       description: Resource not found (or owned by another store — ownership misses read as 404, never an oracle).
@@ -2592,7 +3097,7 @@ components:
             errorDetail:
               code: not_found
               message: Product not found
-              docsUrl: https://www.getly.store/developers/api#errors
+              docsUrl: https://www.getly.store/developers/docs#errors
     ValidationFailed:
       description: A request field is invalid — `param` names it.
       content:
@@ -2604,7 +3109,7 @@ components:
               code: validation_failed
               message: priceCents must be a non-negative integer (minor units)
               hint: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
-              docsUrl: https://www.getly.store/developers/api#errors
+              docsUrl: https://www.getly.store/developers/docs#errors
               param: priceCents
     RateLimited:
       description: Too many requests — wait Retry-After seconds.
@@ -2626,7 +3131,7 @@ components:
               code: rate_limited
               message: Too many requests
               hint: Wait for the number of seconds in the Retry-After header, then retry. Throttle proactively when X-RateLimit-Remaining gets low.
-              docsUrl: https://www.getly.store/developers/api#errors
+              docsUrl: https://www.getly.store/developers/docs#errors
     IdempotencyConflict:
       description: A request with this Idempotency-Key is still processing — wait 2-5s and retry with the SAME key.
       content:
@@ -2638,7 +3143,7 @@ components:
               code: idempotency_conflict
               message: A request with this Idempotency-Key is already processing
               hint: A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
-              docsUrl: https://www.getly.store/developers/api#errors
+              docsUrl: https://www.getly.store/developers/docs#errors
   x-error-codes:
     unauthorized: 'Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys — read it from an environment variable, never hardcode it.'
     insufficient_scope: Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
@@ -2646,19 +3151,31 @@ components:
     validation_failed: Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
     not_found: The resource does not exist or belongs to another store.
     publish_requires_file: 'Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.'
+    publish_requires_image: 'Attach at least one image first: PATCH /api/v1/products/{id} with an `images` array (each item { url, altText? }). Then publish.'
+    publish_requires_category: 'Set a category first: PATCH /api/v1/products/{id} with a `categoryId` from GET /api/categories. A listing with no category never appears on a category page and reaches Google Shopping without one.'
+    category_not_allowed: 'The categoryId names a system category (for example Getly Pages themes) that is not a marketplace shelf. Pick another category from GET /api/categories.'
     moderation_locked: This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products — do not retry automatically.
     not_publishable: Fix every entry in the `reasons` array (each has a machine code and a detail), then call publish again.
     idempotency_conflict: A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
     coupon_invalid: The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
     not_purchasable: The product cannot be sold through the Pay Widget — it must be an active, fixed-price product above $0 (not free or pay-what-you-want). Pick a different product or change its pricing.
     widget_disabled: The store has turned the Pay Widget off (or anti-abuse auto-disabled it). The seller re-enables it at /dashboard/pay-widget.
+    widget_not_approved: 'This store has not been approved for the Pay Widget yet. The seller can request access at /dashboard/pay-widget; approval is a manual review. Distinct from rate_limited on purpose — nothing here clears itself by waiting.'
     origin_not_allowed: The request's Origin is not in the store's domain allowlist. Add the embedding site's domain at /dashboard/pay-widget, or embed only on allowed domains.
     challenge_required: A Cloudflare Turnstile challenge is required. Render the widget with the returned challengeSiteKey and retry with the token — the pay.js embed handles this automatically.
+    payment_method_unavailable: 'The payment rail you asked for (card, paypal or crypto) is not live right now. errorDetail.paymentMethods lists the rails that are — retry with one of them.'
+    already_completed: 'This checkout link has already been paid. Mint a new checkout link for another purchase.'
     high_discount_ack_required: 'Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.'
-    quota_exceeded: Daily creation cap reached for this API key (products 20/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+    quota_exceeded: Daily creation cap reached for this API key (products 100/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
     expired: The resource has expired. Create a fresh one.
     license_invalid: The license key does not exist or was deactivated.
+    license_expired: 'The access period this key was sold for has ended; the buyer can start a new period from the product page.'
     activation_limit_reached: All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
+    billing_not_approved: 'Getly Billing is granted by application: the seller applies at /dashboard/billing with the website the SaaS runs on and a description of what is sold, and a human reviews it. Reads keep working; creating plans and checkouts waits for approval. Nothing here clears itself by waiting or retrying.'
+    plan_exists: 'A billing plan with this externalId already exists in your store. Update that plan, or send a different externalId.'
+    plan_inactive: 'This billing plan is inactive. Activate it (PATCH isActive true) or create another plan before minting a checkout.'
+    subscription_not_cancellable: 'The subscription has already ended, so there is nothing to cancel.'
+    unknown_endpoint: 'No such endpoint. The full list is at https://www.getly.store/developers/docs (machine-readable: https://www.getly.store/llms-api.txt and https://www.getly.store/openapi.yaml). Images upload through POST /api/v1/uploads/images/presign and downloadable files through POST /api/v1/products/{id}/files/presign — there is no /api/v1/media, /api/v1/files or bare /api/v1/uploads.'
     internal_error: Unexpected server error — safe to retry with the same Idempotency-Key.
   schemas:
     ErrorDetail:
@@ -2709,6 +3226,14 @@ components:
         expired — create a fresh resource;
         license_invalid — license key unknown or deactivated;
         activation_limit_reached — free a seat via licenses/deactivate;
+        license_expired — the timed-access period this key was sold for ended;
+        publish_requires_image / publish_requires_category — add the missing image / categoryId, then publish;
+        category_not_allowed — pick a marketplace category, not a system one;
+        not_purchasable / widget_disabled / widget_not_approved / origin_not_allowed / challenge_required — Pay Widget gates (see x-error-codes);
+        payment_method_unavailable — the rail is not live, use one from errorDetail.paymentMethods;
+        already_completed — the checkout link was already paid;
+        billing_not_approved / plan_exists / plan_inactive / subscription_not_cancellable — Getly Billing;
+        unknown_endpoint — no such route, check the endpoint list;
         internal_error — server fault, safe to retry with the same Idempotency-Key.
       enum:
         - unauthorized
@@ -2725,7 +3250,23 @@ components:
         - quota_exceeded
         - expired
         - license_invalid
+        - license_expired
         - activation_limit_reached
+        - publish_requires_image
+        - publish_requires_category
+        - category_not_allowed
+        - not_purchasable
+        - widget_disabled
+        - widget_not_approved
+        - origin_not_allowed
+        - challenge_required
+        - payment_method_unavailable
+        - already_completed
+        - billing_not_approved
+        - plan_exists
+        - plan_inactive
+        - subscription_not_cancellable
+        - unknown_endpoint
         - internal_error
     ErrorEnvelope:
       type: object
@@ -2793,6 +3334,16 @@ components:
           minimum: 1
           maximum: 100
           default: 3
+        licenseType:
+          type: string
+          nullable: true
+          enum:
+            - personal
+            - commercial
+            - extended
+            - cc0
+            - custom
+          description: What the buyer may do with the file. Shown next to the buy button, in the product FAQ and in the page's structured data. null = not stated (the page then shows nothing). Optional — publishing does not require it.
         createdVia:
           type: string
           description: Provenance — "api" for API-created products.
