@@ -7,7 +7,7 @@
  */
 import { GetlyError, parseRateLimitHeaders, type RateLimitInfo } from './error.js';
 
-export const SDK_VERSION = '0.3.0';
+export const SDK_VERSION = '0.3.1';
 export const CLIENT_HEADER = `@getly/sdk/${SDK_VERSION}`;
 export const DEFAULT_BASE_URL = 'https://www.getly.store';
 
