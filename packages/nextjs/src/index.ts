@@ -6,6 +6,6 @@
  */
 export { Checkout } from './checkout.js';
 export type { CheckoutOptions } from './checkout.js';
-export { Webhooks } from './webhooks.js';
+export { Webhooks, WEBHOOK_HANDLER_NAMES } from './webhooks.js';
 export type { WebhooksOptions } from './webhooks.js';
-export type { GetlyWebhookEvent } from '@getly/sdk';
+export type { GetlyWebhookEvent, TypedGetlyWebhookEvent, WebhookEventName, WebhookPayloadMap } from '@getly/sdk';

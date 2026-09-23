@@ -1,6 +1,6 @@
 {
   "name": "@getly/nextjs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Next.js App Router adapters for Getly — Checkout() and Webhooks() route-handler factories.",
   "license": "MIT",
   "type": "module",
@@ -41,7 +41,7 @@
     "commerce"
   ],
   "dependencies": {
-    "@getly/sdk": "^0.2.0"
+    "@getly/sdk": "^0.3.0"
   },
   "peerDependencies": {
     "next": ">=14"

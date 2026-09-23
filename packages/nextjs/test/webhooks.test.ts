@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { Webhooks } from '../src/index.js';
+import { WEBHOOK_EVENT_TYPES } from '@getly/sdk';
+import { Webhooks, WEBHOOK_HANDLER_NAMES, type WebhooksOptions } from '../src/index.js';
 
 const SECRET = 'whsec_next_test_secret';
 
@@ -122,5 +123,59 @@ describe('Webhooks()', () => {
 
   it('throws at build time when secret is missing', () => {
     expect(() => Webhooks({ secret: '' })).toThrow(/secret is required/);
+  });
+
+  it('has a typed handler for every subscribable event, billing.* included', () => {
+    expect(Object.keys(WEBHOOK_HANDLER_NAMES).sort()).toEqual([...WEBHOOK_EVENT_TYPES].sort());
+  });
+
+  it('dispatches each event to its own handler and nothing else', async () => {
+    for (const event of WEBHOOK_EVENT_TYPES) {
+      const spies: Record<string, ReturnType<typeof vi.fn>> = {};
+      const options: Record<string, unknown> = { secret: SECRET };
+      for (const name of Object.values(WEBHOOK_HANDLER_NAMES)) {
+        spies[name] = vi.fn();
+        options[name] = spies[name];
+      }
+      const handler = Webhooks(options as unknown as WebhooksOptions);
+      const payload = makeBody(event, { probe: event });
+      const res = await handler(postRequest(payload, signV2(payload)));
+      expect(res.status).toBe(200);
+      for (const [name, spy] of Object.entries(spies)) {
+        expect(spy).toHaveBeenCalledTimes(name === WEBHOOK_HANDLER_NAMES[event] ? 1 : 0);
+      }
+    }
+  });
+
+  it('hands sale.completed its buyerEmail and item ids', async () => {
+    const onSaleCompleted = vi.fn();
+    const handler = Webhooks({ secret: SECRET, onSaleCompleted });
+    const payload = makeBody('sale.completed', {
+      orderId: 'o1',
+      buyerId: 'u1',
+      buyerEmail: 'jane@example.com',
+      items: [{ orderItemId: 'oi1', productId: 'p1', price: 900, sellerAmount: 810, isGift: false }],
+      total: 900,
+    });
+    await handler(postRequest(payload, signV2(payload)));
+    const data = onSaleCompleted.mock.calls[0][0];
+    expect(data.buyerEmail).toBe('jane@example.com');
+    expect(data.items[0]).toMatchObject({ orderItemId: 'oi1', isGift: false });
+  });
+
+  it('routes billing.subscription.renewed with the customer ref', async () => {
+    const onBillingSubscriptionRenewed = vi.fn();
+    const handler = Webhooks({ secret: SECRET, onBillingSubscriptionRenewed });
+    const payload = makeBody('billing.subscription.renewed', {
+      event: 'billing.subscription.renewed',
+      subscriptionId: 's1',
+      planId: 'pl1',
+      externalCustomerRef: 'user_8841',
+      status: 'active',
+      paymentMethod: 'paypal',
+      amountPaidCents: 1900,
+    });
+    await handler(postRequest(payload, signV2(payload)));
+    expect(onBillingSubscriptionRenewed.mock.calls[0][0]).toMatchObject({ externalCustomerRef: 'user_8841', amountPaidCents: 1900 });
   });
 });

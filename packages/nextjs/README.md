@@ -105,9 +105,10 @@ export const POST = Webhooks({
   secret: process.env.GETLY_WEBHOOK_SECRET!,
 
   onSaleCompleted: async (data) => {
-    // data carries orderId, amounts in integer cents, and — for checkout-link
-    // sales — your checkoutLinkId / reference / metadata.
-    console.log('paid:', data.orderId, data.reference);
+    // data carries orderId, buyerEmail (deliver your own license keys there),
+    // items[] with orderItemId / productId / isGift, amounts in integer cents,
+    // and — for checkout-link sales — your checkoutLinkId / reference / metadata.
+    console.log('paid:', data.orderId, data.buyerEmail, data.reference);
   },
 
   onOrderRefunded: async (data) => {
@@ -120,6 +121,14 @@ export const POST = Webhooks({
 
   onLicenseActivated: async (data) => {
     console.log('license activated:', data.licenseKeyId, data.fingerprint);
+  },
+
+  // Getly Billing — recurring plans for your own product:
+  onBillingSubscriptionRenewed: async (data) => {
+    console.log('renewed:', data.externalCustomerRef, data.currentPeriodEnd);
+  },
+  onBillingSubscriptionExpired: async (data) => {
+    console.log('lapsed:', data.externalCustomerRef);
   },
 
   // Optional catch-all — runs for EVERY verified event:
@@ -159,7 +168,8 @@ Signature verification reads the **raw** request body (`await req.text()`), reco
 |---|---|---|
 | `secret` | `string` | **Required.** The endpoint's HMAC secret (returned once at creation). |
 | `toleranceSec?` | `number` | Max signature age in seconds. Default `300`. |
-| `onSaleCompleted?` `onOrderRefunded?` `onCheckoutLinkCompleted?` `onLicenseActivated?` | `(data, event) => void \| Promise<void>` | Typed per-event handlers. |
+| `onSaleCompleted?` `onProductCreated?` `onProductUpdated?` `onReviewCreated?` `onDownloadCompleted?` `onRefundCreated?` `onOrderRefunded?` `onCheckoutLinkCompleted?` `onLicenseActivated?` `onAccessExpiring?` `onAccessExpired?` `onDisputeCreated?` `onDisputeResolved?` | `(data, event) => void \| Promise<void>` | Typed per-event handlers — `data` is the exact payload type from `@getly/sdk`'s `WebhookPayloadMap`. |
+| `onBillingSubscriptionCreated?` `onBillingSubscriptionRenewed?` `onBillingPaymentFailed?` `onBillingSubscriptionCanceled?` `onBillingSubscriptionExpired?` | `(data, event) => void \| Promise<void>` | Getly Billing lifecycle. Every payload carries `externalCustomerRef` — the `customerRef` you sent to `getly.billing.createCheckout()`. |
 | `onEvent?` | `(event) => void \| Promise<void>` | Catch-all for every verified event. |
 
 ## License

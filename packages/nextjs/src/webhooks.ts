@@ -12,12 +12,21 @@
  *     onSaleCompleted: async (data) => { … },
  *   });
  */
-import { verifyWebhookSignature, type GetlyWebhookEvent } from '@getly/sdk';
+import {
+  verifyWebhookSignature,
+  type GetlyWebhookEvent,
+  type WebhookEventName,
+  type WebhookPayloadMap,
+} from '@getly/sdk';
 
 type MaybePromise<T> = T | Promise<T>;
 
 type EventData = Record<string, unknown>;
-type EventHandler = (data: EventData, event: GetlyWebhookEvent) => MaybePromise<void>;
+/** A typed handler: `data` is the exact payload of that event. */
+type Handler<K extends WebhookEventName> = (
+  data: WebhookPayloadMap[K],
+  event: GetlyWebhookEvent<WebhookPayloadMap[K]>,
+) => MaybePromise<void>;
 
 export interface WebhooksOptions {
   /**
@@ -27,30 +36,73 @@ export interface WebhooksOptions {
   secret: string;
   /** Max signature age in seconds. Default 300. */
   toleranceSec?: number;
-  /** sale.completed — a buyer paid (carries checkoutLinkId/reference/metadata for link sales). */
-  onSaleCompleted?: EventHandler;
-  /** order.refunded */
-  onOrderRefunded?: EventHandler;
+  /**
+   * sale.completed — a buyer paid. Carries buyerEmail (deliver your own
+   * license keys there), items[] with orderItemId / isGift, and
+   * checkoutLinkId / reference / metadata for checkout-link sales.
+   */
+  onSaleCompleted?: Handler<'sale.completed'>;
+  /** product.created */
+  onProductCreated?: Handler<'product.created'>;
+  /** product.updated */
+  onProductUpdated?: Handler<'product.updated'>;
+  /** review.created */
+  onReviewCreated?: Handler<'review.created'>;
+  /** download.completed — a buyer downloaded a file. */
+  onDownloadCompleted?: Handler<'download.completed'>;
+  /** refund.created — a buyer asked for a refund; the decision arrives later as order.refunded. */
+  onRefundCreated?: Handler<'refund.created'>;
+  /** order.refunded — money went back; revoke access on your side. */
+  onOrderRefunded?: Handler<'order.refunded'>;
   /** checkout_link.completed */
-  onCheckoutLinkCompleted?: EventHandler;
+  onCheckoutLinkCompleted?: Handler<'checkout_link.completed'>;
   /** license.activated */
-  onLicenseActivated?: EventHandler;
+  onLicenseActivated?: Handler<'license.activated'>;
   /** access.expiring — a timed-access term ends in 7 days (renew reminder went to the buyer). */
-  onAccessExpiring?: EventHandler;
+  onAccessExpiring?: Handler<'access.expiring'>;
   /** access.expired — a timed-access term has ended; revoke access on your side. */
-  onAccessExpired?: EventHandler;
+  onAccessExpired?: Handler<'access.expired'>;
+  /** dispute.created */
+  onDisputeCreated?: Handler<'dispute.created'>;
+  /** dispute.resolved */
+  onDisputeResolved?: Handler<'dispute.resolved'>;
+  /** billing.subscription.created — a customer subscribed to one of your Getly Billing plans. */
+  onBillingSubscriptionCreated?: Handler<'billing.subscription.created'>;
+  /** billing.subscription.renewed — a period was paid (paymentId, amountPaidCents). */
+  onBillingSubscriptionRenewed?: Handler<'billing.subscription.renewed'>;
+  /** billing.payment_failed — a card renewal failed (once per cycle); status is past_due. */
+  onBillingPaymentFailed?: Handler<'billing.payment_failed'>;
+  /** billing.subscription.canceled — a card subscription ended after cancellation. */
+  onBillingSubscriptionCanceled?: Handler<'billing.subscription.canceled'>;
+  /** billing.subscription.expired — a PayPal or crypto period ran out unpaid. */
+  onBillingSubscriptionExpired?: Handler<'billing.subscription.expired'>;
   /** Called for EVERY verified event (in addition to the typed handler). */
   onEvent?: (event: GetlyWebhookEvent) => MaybePromise<void>;
 }
 
-const TYPED_HANDLERS: Record<string, keyof WebhooksOptions> = {
+/** Event name → the option that handles it. Covers every subscribable event. */
+export const WEBHOOK_HANDLER_NAMES: { readonly [K in WebhookEventName]: keyof WebhooksOptions } = {
   'sale.completed': 'onSaleCompleted',
+  'product.created': 'onProductCreated',
+  'product.updated': 'onProductUpdated',
+  'review.created': 'onReviewCreated',
+  'download.completed': 'onDownloadCompleted',
+  'refund.created': 'onRefundCreated',
   'order.refunded': 'onOrderRefunded',
   'checkout_link.completed': 'onCheckoutLinkCompleted',
   'license.activated': 'onLicenseActivated',
   'access.expiring': 'onAccessExpiring',
   'access.expired': 'onAccessExpired',
+  'dispute.created': 'onDisputeCreated',
+  'dispute.resolved': 'onDisputeResolved',
+  'billing.subscription.created': 'onBillingSubscriptionCreated',
+  'billing.subscription.renewed': 'onBillingSubscriptionRenewed',
+  'billing.payment_failed': 'onBillingPaymentFailed',
+  'billing.subscription.canceled': 'onBillingSubscriptionCanceled',
+  'billing.subscription.expired': 'onBillingSubscriptionExpired',
 };
+
+const TYPED_HANDLERS: Record<string, keyof WebhooksOptions> = WEBHOOK_HANDLER_NAMES;
 
 /**
  * Build a POST route handler. Responses:
@@ -98,7 +150,9 @@ export function Webhooks(options: WebhooksOptions): (req: Request) => Promise<Re
     try {
       const typedKey = TYPED_HANDLERS[event.event];
       if (typedKey) {
-        const handler = options[typedKey] as EventHandler | undefined;
+        const handler = options[typedKey] as
+          | ((data: EventData, event: GetlyWebhookEvent) => MaybePromise<void>)
+          | undefined;
         if (handler) await handler(event.data as EventData, event);
       }
       if (options.onEvent) await options.onEvent(event);
