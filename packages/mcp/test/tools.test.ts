@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('tool registry', () => {
-  it('exposes exactly 19 tools with stable names', () => {
+  it('exposes exactly 27 tools with stable names', () => {
     expect(TOOL_NAMES).toEqual([
       'list_products',
       'get_product',
@@ -34,11 +34,19 @@ describe('tool registry', () => {
       'get_checkout_link_status',
       'list_licenses',
       'get_sales_stats',
+      'list_orders',
+      'list_billing_plans',
+      'create_billing_plan',
+      'update_billing_plan',
+      'create_billing_checkout',
+      'list_billing_subscriptions',
+      'get_billing_subscription',
+      'cancel_billing_subscription',
       'search_categories',
       'get_store',
       'get_pay_widget_code',
     ]);
-    expect(TOOLS).toHaveLength(19);
+    expect(TOOLS).toHaveLength(27);
   });
 
   it('annotations snapshot (readOnly / destructive / idempotent hints)', () => {
@@ -69,6 +77,14 @@ describe('tool registry', () => {
       get_checkout_link_status: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       list_licenses: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       get_sales_stats: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      list_orders: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      list_billing_plans: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      create_billing_plan: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      update_billing_plan: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      create_billing_checkout: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      list_billing_subscriptions: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      get_billing_subscription: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      cancel_billing_subscription: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
       search_categories: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       get_store: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       get_pay_widget_code: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
@@ -123,6 +139,7 @@ describe('confirm gates', () => {
       name: 'create_coupon',
       args: { code: 'ALL-FREE', type: 'percentage', value: 100 },
     },
+    { name: 'cancel_billing_subscription', args: { subscriptionId: '00000000-0000-4000-8000-000000000002' } },
   ];
 
   for (const { name, args } of gateCases) {
@@ -326,5 +343,103 @@ describe('get_pay_widget_code', () => {
     const result = await tool('get_pay_widget_code').handler({ productSlug: 'freebie' });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('not purchasable through the Pay Widget');
+  });
+});
+
+describe('orders, licenseType and billing tools', () => {
+  beforeEach(() => {
+    process.env.GETLY_API_KEY = 'getly_sk_live_test_0000000000';
+  });
+
+  function stubJson(body: unknown, status = 200) {
+    const spy = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', spy);
+    return spy;
+  }
+
+  it('list_orders projects the buyer email', async () => {
+    const spy = stubJson({
+      success: true,
+      data: [
+        {
+          id: 'oi1',
+          orderId: 'o1',
+          price: 900,
+          sellerAmount: 810,
+          createdAt: '2026-09-23T00:00:00.000Z',
+          product: { id: 'p1', name: 'Icons', slug: 'icons' },
+          order: { id: 'o1', status: 'completed', buyer: { id: 'u1', name: 'Jane', email: 'jane@example.com' } },
+        },
+      ],
+      total: 1,
+      page: 1,
+      limit: 20,
+      hasMore: false,
+    });
+    const result = await tool('list_orders').handler({ limit: 5 });
+    const payload = JSON.parse(result.content[0].text) as { items: Array<Record<string, unknown>>; total: number };
+    expect(payload.items[0]).toMatchObject({ orderItemId: 'oi1', buyerEmail: 'jane@example.com', sellerAmountCents: 810 });
+    expect(payload.total).toBe(1);
+    expect(String(spy.mock.calls[0][0])).toContain('/api/v1/orders?limit=5');
+  });
+
+  it('create_product forwards licenseType', async () => {
+    const spy = stubJson({ success: true, data: { id: 'p1', name: 'Icons', slug: 'icons', status: 'draft', priceCents: 900, compareAtPriceCents: null, licenseType: 'commercial' } }, 201);
+    const result = await tool('create_product').handler({ name: 'Icons', priceCents: 900, licenseType: 'commercial' });
+    const body = JSON.parse(String(spy.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.licenseType).toBe('commercial');
+    expect(JSON.parse(result.content[0].text).created.licenseType).toBe('commercial');
+  });
+
+  it('create_billing_plan POSTs with an Idempotency-Key', async () => {
+    const spy = stubJson({ success: true, data: { id: 'pl1', name: 'Pro', amount: 1900 } }, 201);
+    await tool('create_billing_plan').handler({ name: 'Pro', amount: 1900, intervalUnit: 'month' });
+    const [url, init] = spy.mock.calls[0];
+    expect(String(url)).toContain('/api/v1/billing/plans');
+    expect(init?.method).toBe('POST');
+    expect((init?.headers as Record<string, string>)['Idempotency-Key']).toBeTruthy();
+  });
+
+  it('create_billing_checkout returns the hosted url', async () => {
+    stubJson({ success: true, data: { url: 'https://www.getly.store/billing/subscribe/pl1?t=x', expiresAt: '2026-09-24T00:00:00.000Z' } }, 201);
+    const result = await tool('create_billing_checkout').handler({
+      planId: '00000000-0000-4000-8000-000000000003',
+      customerRef: 'user_1',
+      successUrl: 'https://app.example.com/ok',
+      cancelUrl: 'https://app.example.com/no',
+    });
+    expect(JSON.parse(result.content[0].text).url).toContain('/billing/subscribe/');
+  });
+
+  it('list_billing_subscriptions passes filters and returns pagination', async () => {
+    const spy = stubJson({ success: true, data: [{ id: 's1', status: 'active' }], pagination: { limit: 50, offset: 0, hasMore: false } });
+    const result = await tool('list_billing_subscriptions').handler({ status: 'active', customerRef: 'user_1' });
+    expect(String(spy.mock.calls[0][0])).toContain('status=active');
+    expect(String(spy.mock.calls[0][0])).toContain('customerRef=user_1');
+    expect(JSON.parse(result.content[0].text).pagination.hasMore).toBe(false);
+  });
+
+  it('billing_not_approved reaches the model with its hint', async () => {
+    stubJson(
+      {
+        success: false,
+        error: 'Billing access has not been approved',
+        errorDetail: { code: 'billing_not_approved', message: 'Billing access has not been approved', hint: 'Apply at /dashboard/billing.' },
+      },
+      403,
+    );
+    const result = await tool('create_billing_plan').handler({ name: 'Pro', amount: 1900, intervalUnit: 'month' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('billing_not_approved');
+    expect(result.content[0].text).toContain('/dashboard/billing');
+  });
+
+  it('cancel_billing_subscription with confirm POSTs to /cancel', async () => {
+    const spy = stubJson({ success: true, data: { id: 's1', cancelAtPeriodEnd: true } });
+    const result = await tool('cancel_billing_subscription').handler({ subscriptionId: '00000000-0000-4000-8000-000000000002', confirm: true });
+    expect(result.isError).toBeUndefined();
+    expect(String(spy.mock.calls[0][0])).toContain('/api/v1/billing/subscriptions/00000000-0000-4000-8000-000000000002/cancel');
   });
 });

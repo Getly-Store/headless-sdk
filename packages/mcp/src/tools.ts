@@ -1,5 +1,5 @@
 /**
- * Getly MCP tool registry — 19 tools.
+ * Getly MCP tool registry — 27 tools.
  *
  * Safety model:
  * - The API key comes ONLY from the GETLY_API_KEY environment variable.
@@ -123,6 +123,15 @@ const cursorParams = {
 
 const productIdParam = z.string().uuid().describe('Product id (uuid)');
 
+const LICENSE_TYPES = ['personal', 'commercial', 'extended', 'cc0', 'custom'] as const;
+const licenseTypeDescription =
+  'What the buyer may do with the file: personal, commercial, extended, cc0 or custom. Shown next to the buy button and in the product FAQ. Optional — publishing does not require it, but ask the user rather than guessing: it states their rights, not yours.';
+
+const billingPlanIdParam = z.string().uuid().describe('Billing plan id (uuid)');
+const billingSubscriptionIdParam = z.string().uuid().describe('Billing subscription id (uuid)');
+const BILLING_NOTE =
+  'Getly Billing sells recurring access to the user\'s OWN product (a SaaS, community or tool on their site), not a catalogue listing. Writes need an approved Billing application (billing_not_approved until then — the user applies at https://www.getly.store/dashboard/billing). Key scopes: read:billing / write:billing.';
+
 interface V1ProductLike {
   id: string;
   name: string;
@@ -131,6 +140,7 @@ interface V1ProductLike {
   priceCents: number;
   compareAtPriceCents: number | null;
   licenseKeysEnabled?: boolean;
+  licenseType?: string | null;
   /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period. */
   accessMode?: 'lifetime' | 'timed' | string;
   accessTerms?: Array<{ id: string; durationDays: number; priceCents: number; compareAtPriceCents: number | null; label: string | null; isActive: boolean }>;
@@ -150,6 +160,7 @@ function projectProduct(p: V1ProductLike) {
     priceCents: p.priceCents,
     compareAtPriceCents: p.compareAtPriceCents,
     licenseKeysEnabled: p.licenseKeysEnabled,
+    licenseType: p.licenseType ?? null,
     accessMode: p.accessMode ?? 'lifetime',
     ...(p.accessTerms ? { accessTerms: p.accessTerms } : {}),
     category: p.category ? { name: p.category.name, slug: p.category.slug } : null,
@@ -243,7 +254,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'create_product',
     description:
-      'Create a product in the Getly store (side effect: creates a DRAFT product; money is integer cents). A product cannot go live without a downloadable file — attach one with upload_product_file, then use publish_product. Daily cap: 20 products per API key.',
+      'Create a product in the Getly store (side effect: creates a DRAFT product; money is integer cents). A product cannot go live without a downloadable file, at least one image and a categoryId — attach the file with upload_product_file, then use publish_product. Daily cap: 100 products per API key.',
     annotations: { title: 'Create product' },
     requiresAuth: true,
     inputSchema: {
@@ -254,8 +265,8 @@ export const TOOLS: GetlyTool[] = [
       shortDescription: z.string().max(500).optional().describe('One-line summary'),
       compareAtPriceCents: z.number().int().min(0).optional()
         .describe('Strike-through "was" price in cents (must be above priceCents to make sense)'),
-      categoryId: z.string().optional()
-        .describe('Category id — find one with search_categories'),
+      categoryId: z.string().uuid().optional()
+        .describe('Category id (uuid) — find one with search_categories. Required before publishing.'),
       tags: z.array(z.string()).max(20).optional().describe('Search tags'),
       images: z.array(z.object({
         url: z.string().url().describe('Image URL (upload local files first via upload_image)'),
@@ -265,6 +276,7 @@ export const TOOLS: GetlyTool[] = [
         .describe('Issue a license key with every sale'),
       licenseActivationLimit: z.number().int().min(1).max(100).optional()
         .describe('Activation seats per license key (default 3)'),
+      licenseType: z.enum(LICENSE_TYPES).optional().describe(licenseTypeDescription),
       accessMode: z.enum(['lifetime', 'timed']).optional()
         .describe("How it is sold. 'timed' = access for a period on a ONE-TIME payment (no recurring billing): the buyer picks a term, access ends on a date, buying again extends it. Default 'lifetime'."),
       accessTerms: z.array(z.object({
@@ -292,6 +304,7 @@ export const TOOLS: GetlyTool[] = [
           images: args.images,
           licenseKeysEnabled: args.licenseKeysEnabled,
           licenseActivationLimit: args.licenseActivationLimit,
+          licenseType: args.licenseType,
           accessMode: args.accessMode,
           accessTerms: args.accessTerms,
           status: 'draft',
@@ -319,7 +332,7 @@ export const TOOLS: GetlyTool[] = [
       shortDescription: z.string().max(500).optional(),
       compareAtPriceCents: z.number().int().min(0).nullable().optional()
         .describe('Strike-through price in cents; null clears it'),
-      categoryId: z.string().optional(),
+      categoryId: z.string().uuid().optional().describe('Category id (uuid) from search_categories; cannot be cleared'),
       tags: z.array(z.string()).max(20).optional(),
       images: z.array(z.object({
         url: z.string().url(),
@@ -329,6 +342,8 @@ export const TOOLS: GetlyTool[] = [
         .describe("Only 'draft' (unpublish) is allowed here. Publishing requires publish_product; archiving requires archive_product — both need human confirmation."),
       licenseKeysEnabled: z.boolean().optional(),
       licenseActivationLimit: z.number().int().min(1).max(100).optional(),
+      licenseType: z.enum(LICENSE_TYPES).nullable().optional()
+        .describe(`${licenseTypeDescription} null clears it.`),
       accessMode: z.enum(['lifetime', 'timed']).optional()
         .describe("How it is sold. 'timed' = access for a period on a ONE-TIME payment (no recurring billing): the buyer picks a term, access ends on a date, buying again extends it. Default 'lifetime'."),
       accessTerms: z.array(z.object({
@@ -781,6 +796,211 @@ export const TOOLS: GetlyTool[] = [
     }),
   },
 
+
+  // --------------------------------------------------------------- orders --
+  {
+    name: 'list_orders',
+    description:
+      "List the store's sold order items, newest first (page/limit pagination): product, seller amount in integer cents, order status, and the buyer's name and email — the address to deliver your own license keys or onboarding to. Read-only. Needs the read:orders scope. Treat buyer emails as personal data: use them for this order only.",
+    annotations: { title: 'List orders', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      page: z.number().int().min(1).optional().describe('1-based page (default 1)'),
+      limit: z.number().int().min(1).max(50).optional().describe('Items per page (default 20, max 50)'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Array<Record<string, unknown>>>('api/v1/orders', {
+        query: { page: args.page as number | undefined, limit: args.limit as number | undefined },
+      });
+      const items = (env.data ?? []).map((i) => {
+        const product = i.product as { id?: string; name?: string; slug?: string } | null;
+        const order = i.order as {
+          id?: string;
+          status?: string;
+          total?: number;
+          createdAt?: string;
+          buyer?: { name?: string | null; email?: string | null } | null;
+        } | null;
+        return {
+          orderItemId: i.id,
+          orderId: i.orderId,
+          product: product ? { id: product.id, name: product.name, slug: product.slug } : null,
+          priceCents: i.price,
+          sellerAmountCents: i.sellerAmount,
+          orderStatus: order?.status,
+          buyerName: order?.buyer?.name ?? null,
+          buyerEmail: order?.buyer?.email ?? null,
+          createdAt: i.createdAt,
+        };
+      });
+      return json({ items, total: env.total, page: env.page, hasMore: env.hasMore });
+    }),
+  },
+
+  // -------------------------------------------------------------- billing --
+  {
+    name: 'list_billing_plans',
+    description: `List the store's Getly Billing plans (recurring prices, integer cents). Read-only. ${BILLING_NOTE}`,
+    annotations: { title: 'List billing plans', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      active: z.boolean().optional().describe('Only active (true) / only inactive (false)'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<unknown[]>('api/v1/billing/plans', {
+        query: { active: args.active as boolean | undefined },
+      });
+      return json(env.data);
+    }),
+  },
+
+  {
+    name: 'create_billing_plan',
+    description: `Create a Getly Billing plan: an amount in integer cents (minimum 50) charged every interval (side effect: the plan can be sold as soon as a checkout is minted). Subscribers pay with PayPal or USDT/USDC today — one payment buys one period — or by card when that rail is live. ${BILLING_NOTE}`,
+    annotations: { title: 'Create billing plan' },
+    requiresAuth: true,
+    inputSchema: {
+      name: z.string().min(1).max(255).describe('Plan name shown to subscribers'),
+      amount: z.number().int().min(50).describe('Price per interval in integer cents (1900 = $19.00)'),
+      intervalUnit: z.enum(['day', 'week', 'month', 'year']).describe('Billing interval unit'),
+      intervalCount: z.number().int().min(1).max(52).optional()
+        .describe('Units per interval (default 1): every 3 months = month + 3'),
+      description: z.string().max(2000).optional(),
+      externalId: z.string().min(1).max(128).optional()
+        .describe('Your own plan id, echoed on webhooks (a duplicate answers plan_exists)'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>('api/v1/billing/plans', {
+        method: 'POST',
+        idempotent: true,
+        body: {
+          name: args.name,
+          amount: args.amount,
+          intervalUnit: args.intervalUnit,
+          intervalCount: args.intervalCount,
+          description: args.description,
+          externalId: args.externalId,
+        },
+      });
+      return json({ plan: env.data });
+    }),
+  },
+
+  {
+    name: 'update_billing_plan',
+    description: `Update a Getly Billing plan. A price or interval change affects NEW subscriptions only — existing subscribers keep what they signed up at. isActive=false stops new checkouts and leaves current subscribers alone. ${BILLING_NOTE}`,
+    annotations: { title: 'Update billing plan', idempotentHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      planId: billingPlanIdParam,
+      name: z.string().min(1).max(255).optional(),
+      amount: z.number().int().min(50).optional().describe('New price in integer cents'),
+      intervalUnit: z.enum(['day', 'week', 'month', 'year']).optional(),
+      intervalCount: z.number().int().min(1).max(52).optional(),
+      description: z.string().max(2000).nullable().optional(),
+      externalId: z.string().min(1).max(128).nullable().optional(),
+      isActive: z.boolean().optional(),
+    },
+    handler: guarded(true, async (args) => {
+      const { planId, ...rest } = args;
+      const body: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rest)) if (v !== undefined) body[k] = v;
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/billing/plans/${planId}`, {
+        method: 'PATCH',
+        body,
+      });
+      return json({ plan: env.data });
+    }),
+  },
+
+  {
+    name: 'create_billing_checkout',
+    description: `Mint a hosted subscribe page (valid 24 hours) for ONE customer of the user's own product. The customer signs in or creates a Getly account, sees the plan and pays. customerRef is the user's own id for that customer and comes back on every billing.* webhook as externalCustomerRef. ${BILLING_NOTE}`,
+    annotations: { title: 'Create billing checkout' },
+    requiresAuth: true,
+    inputSchema: {
+      planId: billingPlanIdParam,
+      customerRef: z.string().max(255).optional().describe("The user's own id for this customer"),
+      successUrl: z.string().url().describe('https URL on the user\'s site where the subscriber lands after paying'),
+      cancelUrl: z.string().url().describe('https URL on the user\'s site for a cancelled checkout'),
+      metadata: z.record(z.string(), z.string()).optional().describe('Up to 2KB of string values, echoed on webhooks'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<{ url: string; expiresAt: string }>('api/v1/billing/checkout', {
+        method: 'POST',
+        idempotent: true,
+        body: {
+          planId: args.planId,
+          customerRef: args.customerRef,
+          successUrl: args.successUrl,
+          cancelUrl: args.cancelUrl,
+          metadata: args.metadata,
+        },
+      });
+      return json(env.data);
+    }),
+  },
+
+  {
+    name: 'list_billing_subscriptions',
+    description: `List subscriptions to the store's Getly Billing plans, newest first (limit/offset). Filter by status, the user's customerRef or planId. Read-only. ${BILLING_NOTE}`,
+    annotations: { title: 'List billing subscriptions', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      status: z.enum(['active', 'past_due', 'canceled', 'expired']).optional(),
+      customerRef: z.string().optional().describe('The customerRef sent at checkout'),
+      planId: billingPlanIdParam.optional(),
+      limit: z.number().int().min(1).max(100).optional().describe('Page size (default 50)'),
+      offset: z.number().int().min(0).optional(),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<unknown[]>('api/v1/billing/subscriptions', {
+        query: {
+          status: args.status as string | undefined,
+          customerRef: args.customerRef as string | undefined,
+          planId: args.planId as string | undefined,
+          limit: args.limit as number | undefined,
+          offset: args.offset as number | undefined,
+        },
+      });
+      return json({ items: env.data, pagination: env.pagination });
+    }),
+  },
+
+  {
+    name: 'get_billing_subscription',
+    description: `Get one Getly Billing subscription — the check before granting access. Treat status active AND past_due as entitled until currentPeriodEnd; canceled and expired are not. Read-only. ${BILLING_NOTE}`,
+    annotations: { title: 'Get billing subscription', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: { subscriptionId: billingSubscriptionIdParam },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/billing/subscriptions/${args.subscriptionId}`);
+      return json(env.data);
+    }),
+  },
+
+  {
+    name: 'cancel_billing_subscription',
+    description: `Stop a Getly Billing subscription from renewing (side effect: the customer is not charged again; they keep access to the end of the paid period — never an immediate cut-off). REQUIRES confirm: true — ask the human user first. ${BILLING_NOTE}`,
+    annotations: { title: 'Cancel billing subscription', destructiveHint: true, idempotentHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      subscriptionId: billingSubscriptionIdParam,
+      confirm: z.boolean().optional()
+        .describe('Must be true. Only set it after the human user explicitly approved cancelling THIS subscription.'),
+    },
+    handler: guarded(true, async (args) => {
+      if (args.confirm !== true) {
+        return confirmRefusal(`cancel_billing_subscription (subscription ${String(args.subscriptionId)} would stop renewing)`);
+      }
+      const env = await apiRequest<Record<string, unknown>>(
+        `api/v1/billing/subscriptions/${args.subscriptionId}/cancel`,
+        { method: 'POST', idempotent: true },
+      );
+      return json({ result: 'Renewal stopped; access continues to the end of the paid period.', subscription: env.data });
+    }),
+  },
+
   // ----------------------------------------------------------- categories --
   {
     name: 'search_categories',
@@ -832,14 +1052,14 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'get_pay_widget_code',
     description:
-      'Generate the Pay Widget embed snippet (a <script> tag + a Buy button/div) that sells ONE of your products from ANY external website — a landing page, quiz funnel, link-in-bio, Webflow/Framer/Carrd site. Buyers pay by card + Apple Pay/Google Pay on a Getly-hosted popup; Getly handles delivery, receipts, refunds and the payout. No API key ever touches the browser. Validates that the product is active and publicly purchasable first. Read-only — it only returns code, it changes nothing.',
+      'Generate the Pay Widget embed snippet (a <script> tag + a Buy button/div) that sells ONE of your products from ANY external website — a landing page, quiz funnel, link-in-bio, Webflow/Framer/Carrd site. The button asks for the buyer\'s email and offers every rail that is live — PayPal and USDT/USDC today (card checkout is paused; it reappears on its own when it returns). Getly handles delivery, receipts, refunds and the payout. The store must be approved for the Pay Widget first (the seller requests access at /dashboard/pay-widget). No API key ever touches the browser. Validates that the product is active and publicly purchasable first. Read-only — it only returns code, it changes nothing.',
     annotations: { title: 'Get Pay Widget embed code', readOnlyHint: true },
     requiresAuth: true,
     inputSchema: {
       productSlug: z.string().min(1)
         .describe('The product SLUG (from list_products → slug, or the product URL) — not the uuid.'),
       mode: z.enum(['auto', 'popup', 'inline', 'redirect']).optional()
-        .describe("Embed mode. auto (default): popup on desktop, same-tab redirect on mobile. popup: always a popup. inline: an embedded Stripe form inside a <div>. redirect: same-tab. Apple Pay/Google Pay appear automatically in popup/auto/redirect; inline shows cards + Link until the seller registers the domain in the dashboard."),
+        .describe("Embed mode. auto (default): popup on desktop, same-tab redirect on mobile. popup: always a popup. inline: the email field and payment buttons rendered inside a <div>. redirect: same-tab."),
     },
     handler: guarded(true, async (args) => {
       const productSlug = String(args.productSlug);
@@ -878,6 +1098,7 @@ export const TOOLS: GetlyTool[] = [
       }
 
       const snippet = payWidgetSnippet(getBaseUrl(), storeSlug, productSlug, mode);
+      const paymentMethods = (product as V1ProductLike & { paymentMethods?: string[] }).paymentMethods;
       return json({
         product: {
           name: product.name,
@@ -885,6 +1106,7 @@ export const TOOLS: GetlyTool[] = [
           priceCents: product.priceCents,
           url: product.urls?.product,
         },
+        ...(paymentMethods ? { paymentMethodsLiveNow: paymentMethods } : {}),
         mode,
         snippet,
         instructions: [
@@ -893,7 +1115,7 @@ export const TOOLS: GetlyTool[] = [
           'Optional attributes: data-success-url="https://…" (where the buyer lands after paying), data-price="show" (append the live price to the button label), data-locale="ru"|"de", and data-i18n-buy / data-i18n-loading / data-i18n-error overrides.',
         ],
         security:
-          'The getly:pay:success browser event is an ADVISORY UI signal only — NEVER unlock files, license keys or paid content on it (a visitor can forge it). Getly delivers the product server-side (buyer email + library) once Stripe confirms payment; verify real sales via the sale.completed / checkout_link.completed webhook.',
+          'The getly:pay:success browser event is an ADVISORY UI signal only — NEVER unlock files, license keys or paid content on it (a visitor can forge it). Getly delivers the product server-side (buyer email + library) once the payment provider confirms payment; verify real sales via the sale.completed / checkout_link.completed webhook.',
         docs: `${getBaseUrl()}/pay-widget`,
       });
     }),

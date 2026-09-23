@@ -53,15 +53,15 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 
 > `npx @getly/mcp init` detects installed clients and offers to write these files for you (merging safely with existing config). `init --print` only prints the snippets.
 
-## Tools (18)
+## Tools (27)
 
 | Tool | What it does | Hints / gates |
 |---|---|---|
 | `list_products` | List store products (cursor-paginated, filters) | read-only |
 | `get_product` | Full product detail (files, images, reviews, URLs) | read-only |
-| `create_product` | Create a **draft** product (money = integer cents) | 20/day cap |
-| `update_product` | Edit name/price/description/images/tags | idempotent; cannot publish/archive |
-| `publish_product` | Make a draft publicly purchasable | **requires `confirm: true`** |
+| `create_product` | Create a **draft** product (money = integer cents, optional `licenseType`) | 100/day cap |
+| `update_product` | Edit name/price/description/images/tags/`licenseType` | idempotent; cannot publish/archive |
+| `publish_product` | Make a draft publicly purchasable (needs a file, an image and a category) | **requires `confirm: true`** |
 | `archive_product` | Remove a product from sale (soft delete) | **destructive, requires `confirm: true`** |
 | `upload_product_file` | Upload a local file as the buyer download (≤2GB) | slow for large files |
 | `upload_image` | Upload a local image, returns a URL for products/posts | ≤10MB |
@@ -73,10 +73,23 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `get_checkout_link_status` | Poll a link: open / completed / expired | read-only |
 | `list_licenses` | Issued license keys + activations | read-only |
 | `get_sales_stats` | Revenue (cents), sales, per-month breakdown, recent orders | read-only |
+| `list_orders` | Sold order items with product, seller amount and the **buyer's email** | read-only; `read:orders` |
+| `list_billing_plans` | Getly Billing plans (recurring prices for your own product) | read-only; `read:billing` |
+| `create_billing_plan` | New plan: amount in cents every day/week/month/year × 1–52 | `write:billing`, approved application |
+| `update_billing_plan` | Rename, reprice (new subscribers only) or deactivate a plan | idempotent |
+| `create_billing_checkout` | Hosted subscribe page for one customer (24h), `customerRef` echoed on webhooks | `write:billing` |
+| `list_billing_subscriptions` | Subscriptions, filter by status / customerRef / plan | read-only |
+| `get_billing_subscription` | The access check: active and past_due are entitled | read-only |
+| `cancel_billing_subscription` | Stop renewal at the end of the paid period | **destructive, requires `confirm: true`** |
 | `search_categories` | Fuzzy search of the public 700+ category tree | read-only, no key needed, cached 1h |
 | `get_store` | Store profile + public URL | read-only |
+| `get_pay_widget_code` | Embed snippet for a Buy button on the user's own site | read-only |
 
 **Timed access.** `create_product` and `update_product` accept `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents / label / isActive) to sell access for a period on a one-time payment — no recurring billing. On update the array replaces the table: rows with an `id` are updated, rows left out are retired. The store's webhook endpoint receives `access.expiring` (7 days before the end) and `access.expired`.
+
+**Getly Billing.** The billing tools sell recurring access to the user's *own* product (a SaaS, community or tool on their site) — not a catalogue listing. Writes need an approved Billing application (`billing_not_approved` until the user applies at `/dashboard/billing`). Subscribers pay with PayPal or USDT/USDC today (one payment buys one period) or by card when that rail is live.
+
+**Payments today.** Buyers pay with PayPal or USDT/USDC; card checkout is paused. Seller payouts are USDT/USDC on BNB Smart Chain (min $5) or USDT on Tron (min $15), on the 1st and 15th.
 
 There is intentionally **no bulk-delete tool**, and the model is instructed to get explicit human approval before any confirm-gated call.
 
@@ -87,6 +100,7 @@ There is intentionally **no bulk-delete tool**, and the model is instructed to g
   - Blogging: `read:posts`, `write:posts` (+ `write:products` for image uploads)
   - Sales bot: `checkout:create`, `read:coupons` (+ `write:coupons` if it mints discounts)
   - Reporting: `read:analytics`, `read:orders`, `read:store`, `read:licenses`
+  - Subscriptions for your own product: `read:billing`, `write:billing`
 - **Plaintext config warning.** MCP client config files store `GETLY_API_KEY` in plaintext on your machine. Anyone with access to those files can act on your store. Prefer per-machine keys.
 - **Rotate / revoke** any key you suspect leaked at https://www.getly.store/dashboard/developer/keys (rotation keeps the old token valid for 24h so configs don't break mid-swap).
 - The key never leaves the `Authorization` header of requests to `www.getly.store`; the server never logs or echoes it (setup output masks all but the last 4 characters).
