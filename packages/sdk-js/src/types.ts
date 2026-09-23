@@ -203,8 +203,8 @@ export interface ProductCreateInput {
   keyPoolLowThreshold?: number;
   /**
    * Free trial / demo download shown before purchase: an https URL of a file
-   * you uploaded to Getly, or — Getly Trusted stores only — a link to your own
-   * trial download. Executables cannot be uploaded as a demo.
+   * you uploaded to Getly (executables refused), or a link to the trial
+   * download on your own site.
    */
   demoUrl?: string | null;
   /**

@@ -270,9 +270,9 @@ licenseKeysEnabled — both true is a 400). keyPoolLowThreshold (integer
 1–1000, default 5) sets when you get the "running low" email. Add keys
 with POST /api/v1/products/{id}/keys once the product exists.
 demoUrl (optional https URL) puts a "Try it free" button next to the
-price: a file you uploaded to Getly (executables refused), or — Getly
-Trusted stores only — a link to your own trial download. Anything else
-is a 400 with param demoUrl.
+price: a file you uploaded to Getly (executables refused), or a link to
+the trial download on your own site. A non-https value or an uploaded
+executable is a 400 with param demoUrl.
 Timed access: send accessMode "timed" and accessTerms[] (durationDays 1–3650, unique; priceCents ≥ 0; optional compareAtPriceCents above priceCents; optional label) to sell access for a period on a one-time payment — the buyer picks a term, access ends on a date, and your endpoint receives access.expiring (7 days before) and access.expired webhooks. The catalogue price becomes the cheapest active term. A timed product cannot be published without an active term. On PATCH, accessTerms replaces the table (rows with an id are updated, missing rows are retired, never deleted). Licence keys sold under a term stop validating when it ends (license_expired).
 Provenance is recorded as createdVia="api".
 
