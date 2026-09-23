@@ -154,13 +154,13 @@ describe('Webhooks()', () => {
       orderId: 'o1',
       buyerId: 'u1',
       buyerEmail: 'jane@example.com',
-      items: [{ orderItemId: 'oi1', productId: 'p1', price: 900, sellerAmount: 810, isGift: false }],
+      items: [{ orderItemId: 'oi1', productId: 'p1', price: 900, sellerAmount: 810, isGift: false, licenseKey: 'AAAA-0001' }],
       total: 900,
     });
     await handler(postRequest(payload, signV2(payload)));
     const data = onSaleCompleted.mock.calls[0][0];
     expect(data.buyerEmail).toBe('jane@example.com');
-    expect(data.items[0]).toMatchObject({ orderItemId: 'oi1', isGift: false });
+    expect(data.items[0]).toMatchObject({ orderItemId: 'oi1', isGift: false, licenseKey: 'AAAA-0001' });
   });
 
   it('routes billing.subscription.renewed with the customer ref', async () => {

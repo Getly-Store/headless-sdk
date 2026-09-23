@@ -37,8 +37,9 @@ export interface WebhooksOptions {
   /** Max signature age in seconds. Default 300. */
   toleranceSec?: number;
   /**
-   * sale.completed — a buyer paid. Carries buyerEmail (deliver your own
-   * license keys there), items[] with orderItemId / isGift, and
+   * sale.completed — a buyer paid. Carries buyerEmail, items[] with
+   * orderItemId / isGift / licenseKey (from your key pool or Getly-generated;
+   * null while the pool is empty), and
    * checkoutLinkId / reference / metadata for checkout-link sales.
    */
   onSaleCompleted?: Handler<'sale.completed'>;

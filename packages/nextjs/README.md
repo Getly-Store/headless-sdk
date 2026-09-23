@@ -105,8 +105,9 @@ export const POST = Webhooks({
   secret: process.env.GETLY_WEBHOOK_SECRET!,
 
   onSaleCompleted: async (data) => {
-    // data carries orderId, buyerEmail (deliver your own license keys there),
-    // items[] with orderItemId / productId / isGift, amounts in integer cents,
+    // data carries orderId, buyerEmail, items[] with orderItemId / productId /
+    // isGift / licenseKey (the key from your key pool or Getly-generated; null
+    // while the pool is empty), amounts in integer cents,
     // and — for checkout-link sales — your checkoutLinkId / reference / metadata.
     console.log('paid:', data.orderId, data.buyerEmail, data.reference);
   },
