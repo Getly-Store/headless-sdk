@@ -31,7 +31,7 @@ https://www.getly.store/llms-api.txt · OpenAPI: https://www.getly.store/openapi
   обрабатывается: подожди 2–5 сек и повтори С ТЕМ ЖЕ ключом.
 - **Лимиты:** каждый ответ несёт `X-RateLimit-Limit / -Remaining / -Reset` (секунды).
   Притормаживай заранее при `Remaining ≤ 1`. На 429 жди `Retry-After` секунд и
-  повтори (максимум 2 раза). Дневные капы (товары 20/день, посты 5/день, купоны
+  повтори (максимум 2 раза). Дневные капы (товары 100/день, посты 5/день, купоны
   30/день) дают 429 с кодом `quota_exceeded` — НЕ ретраить в цикле, сообщи
   пользователю.
 - **Scopes:** 403 `insufficient_scope` называет недостающий scope в
@@ -47,20 +47,27 @@ https://www.getly.store/llms-api.txt · OpenAPI: https://www.getly.store/openapi
 | `rate_limited` | Подожди `Retry-After` сек, повтори (≤2 раз). |
 | `quota_exceeded` | Дневной кап. Остановись, сообщи, предложи продолжить завтра. |
 | `validation_failed` | Исправь поле из `param`, повтори с ТЕМ ЖЕ Idempotency-Key. |
-| `publish_requires_file` | Сначала прикрепи файл (флоу ниже), потом публикуй. |
+| `publish_requires_file` / `publish_requires_image` / `publish_requires_category` | Прикрепи файл / добавь картинку / задай `categoryId` (из `GET /api/categories`), потом публикуй. |
+| `category_not_allowed` | Это служебная категория — выбери обычную из `GET /api/categories`. |
 | `moderation_locked` / `not_publishable` | Товар на ручной модерации. НИКОГДА не ретраить циклом. Честно скажи: «ожидает модерации Getly». |
 | `idempotency_conflict` | Тот же ключ ещё обрабатывается → 2–5 сек, повтор с тем же ключом. |
 | `coupon_invalid` | Возьми валидный код из `GET /api/v1/coupons` или создай новый. |
 | `high_discount_ack_required` | Купон ≥90% требует `acknowledgeHighDiscount: true`. СНАЧАЛА СПРОСИ ЧЕЛОВЕКА — никогда не подтверждай сам. |
 | `expired` | Создай свежий ресурс (например, новую платёжную ссылку). |
 | `license_invalid` / `activation_limit_reached` | Покажи конечному пользователю; предложи `deactivate`, чтобы освободить слот. |
+| `license_expired` | Кончился срок доступа, под который продан ключ — покупатель продлевает на странице товара. |
+| `billing_not_approved` | Запись в Getly Billing требует одобренной заявки — человек подаёт её на `/dashboard/billing`. Чтение работает. Не ретраить. |
+| `plan_exists` / `plan_inactive` / `subscription_not_cancellable` | Billing: другой `externalId`, активируй план, или подписка уже закончилась. |
+| `widget_not_approved` / `widget_disabled` / `origin_not_allowed` / `challenge_required` / `not_purchasable` | Ограничения Pay-виджета — продавец запрашивает доступ / включает виджет / добавляет домен на `/dashboard/pay-widget`; бесплатные и PWYW-товары продаются на странице товара. |
+| `payment_method_unavailable` | Этот способ оплаты (card, paypal, crypto) сейчас недоступен — список живых в `errorDetail.paymentMethods`. |
+| `unknown_endpoint` | Такого маршрута нет — сверься с `https://www.getly.store/llms-api.txt`. |
 
 ## Ключевые флоу (выполняй в точности)
 
 ### Создать → загрузить → опубликовать товар
 
 ```
-1. POST /api/v1/products                    {name, priceCents, shortDescription, ...} → черновик (id)
+1. POST /api/v1/products                    {name, priceCents, shortDescription, description, categoryId, licenseType?, ...} → черновик (id)
 2. POST /api/v1/products/{id}/files/presign {fileName, fileSize, fileType} → {uploadUrl, fileUrl}
 3. PUT  <uploadUrl> с СЫРЫМИ БАЙТАМИ; Content-Length ДОЛЖЕН равняться fileSize
 4. POST /api/v1/products/{id}/files         {fileUrl, fileName, fileSize, fileType}  ← шаг прикрепления. НЕ ПРОПУСКАЙ.
@@ -70,6 +77,11 @@ https://www.getly.store/llms-api.txt · OpenAPI: https://www.getly.store/openapi
 существует как загрузка и удаляется сборщиком мусора через 24 часа. Картинки товара —
 тот же танец через `POST /api/v1/uploads/images/presign` (≤10MB, только image/*),
 затем `publicUrl` в `images: [{url, altText}]`.
+
+Для публикации нужны скачиваемый файл, хотя бы одна картинка и `categoryId` (UUID из
+`GET /api/categories`); чего не хватает — придёт машинным кодом в `reasons[]`.
+`licenseType` (`personal` | `commercial` | `extended` | `cc0` | `custom`) — что
+покупатель вправе делать с файлом; необязателен, но спроси человека, а не угадывай.
 
 У нового магазина первые публикации могут вернуть
 `moderationStatus: "pending_review"` — это модерация доверия до первой продажи, а не
@@ -83,6 +95,8 @@ POST /api/v1/checkout-links {productId, couponCode?, reference?, metadata?, succ
 ```
 - `reference` (≤200 симв.) — твой идентификатор корреляции (chat id). Вернётся в
   вебхуке `sale.completed` и в `GET /api/v1/checkout-links/{id}`.
+- Покупатели сейчас платят через PayPal или USDT/USDC (оплата картой на паузе);
+  страница ссылки сначала спрашивает email. Не обещай оплату картой.
 - Купон валидируется повторно в момент клика и применяется автоматически — покупатель
   не вводит код. Никогда не считай скидки на клиенте: цены принадлежат серверу.
 - Нет вебхук-приёмника? Опрашивай `GET /api/v1/checkout-links/{id}`
@@ -111,19 +125,42 @@ POST /api/v1/checkout-links {productId, couponCode?, reference?, metadata?, succ
 Регистрация: `POST /api/v1/webhook-endpoints {url, events}` (scope
 `webhooks:manage`; секрет возвращается ОДИН раз). События: `sale.completed`,
 `order.refunded`, `checkout_link.completed`, `license.activated`,
-`product.created`, `product.updated`, `review.created`, `download.completed`, `*`.
+`product.created`, `product.updated`, `review.created`, `download.completed`,
+`refund.created`, `access.expiring`, `access.expired`, `dispute.created`,
+`dispute.resolved`, `billing.subscription.created`, `billing.subscription.renewed`,
+`billing.payment_failed`, `billing.subscription.canceled`,
+`billing.subscription.expired`, `*`. `sale.completed` несёт `buyerEmail` и
+`items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`, `isGift`) — свои
+лицензионные ключи отправляй на `buyerEmail`; тот же адрес отдаёт
+`GET /api/v1/orders` (`order.buyer.email`). Это персональные данные.
 **Всегда проверяй подпись**: заголовок `X-Getly-Signature-V2` = `t=<unix>,v1=<hex>`,
 где `v1 = HMAC-SHA256(secret, t + "." + rawBody)`; отклоняй при `|now - t| > 300s`
 или несовпадении (сравнение timing-safe). В `@getly/sdk` есть
 `verifyWebhookSignature()` — используй её. Если выдаёшь доступ по
 `sale.completed` — ОБЯЗАН отзывать по `order.refunded`.
 
+### Подписки на СОБСТВЕННЫЙ продукт (Getly Billing)
+
+Для SaaS/сообщества/инструмента на сайте пользователя — это не листинг в каталоге.
+Scopes `read:billing` / `write:billing`; запись требует одобренной заявки
+(`billing_not_approved`, пока человек не подаст её на `/dashboard/billing`).
+```
+POST /api/v1/billing/plans      {name, amount (центы ≥50), intervalUnit day|week|month|year, intervalCount?, externalId?}
+POST /api/v1/billing/checkout   {planId, customerRef, successUrl, cancelUrl, metadata?}   → {url, expiresAt}  (страница на 24 ч)
+GET  /api/v1/billing/subscriptions/{id}    → status active|past_due|canceled|expired
+POST /api/v1/billing/subscriptions/{id}/cancel   (останавливает продление в конце периода — сначала спроси человека)
+```
+Доступ даёшь, пока статус `active` или `past_due`, до `currentPeriodEnd`.
+`customerRef` возвращается в каждом вебхуке `billing.*` как `externalCustomerRef`.
+Подписчики платят через PayPal или USDT/USDC (один платёж — один период), картой —
+когда этот способ оплаты вернётся.
+
 ## Тест без денег
 
 Полный платёжный цикл без списаний: товар с `priceCents: 0` (или купон 100% — нужен
 `acknowledgeHighDiscount` от человека), покупка через страницу товара (гостевой
 checkout: только email), приход `sale.completed`. Потом ставь реальную цену. Никогда
-не тестируй настоящими картами.
+не тестируй настоящими платежами.
 
 ## Правила безопасности (не обсуждаются)
 
@@ -142,11 +179,12 @@ checkout: только email), приход `sale.completed`. Потом ста�
 - `POST /api/v1/licenses/validate|activate|deactivate` — проверка лицензий из
   установленного софта.
 - `GET /go/{linkId}` — редирект платёжной ссылки (это и есть URL оплаты).
-- **Pay-виджет** — чтобы продавать с САЙТА пользователя, дай ему embed, а не вызов API: `<script src="https://www.getly.store/pay.js" async></script>` + `<button data-getly-buy data-store="S" data-product="P">Купить</button>` (карта + Apple Pay/Google Pay, без Stripe-аккаунта продавца; MCP-инструмент `get_pay_widget_code`). Он вызывает `POST /api/v1/public/checkout` и опрашивает `GET /api/v1/public/checkout/{linkId}/status`. Событие `getly:pay:success` — только подсказка UI, НИКОГДА не открывай по нему контент; проверяй через вебхук `sale.completed`.
+- **Pay-виджет** — чтобы продавать с САЙТА пользователя, дай ему embed, а не вызов API: `<script src="https://www.getly.store/pay.js" async></script>` + `<button data-getly-buy data-store="S" data-product="P">Купить</button>` (покупатель вводит email и платит через PayPal или USDT/USDC — оплата картой на паузе; магазину нужно одобрение Pay-виджета; MCP-инструмент `get_pay_widget_code`). Он вызывает `POST /api/v1/public/checkout` и опрашивает `GET /api/v1/public/checkout/{linkId}/status`. Событие `getly:pay:success` — только подсказка UI, НИКОГДА не открывай по нему контент; проверяй через вебхук `sale.completed`.
 
 ## 3 шага, которые за пользователя сделать нельзя
 
 1. Регистрация на getly.store. 2. Создание API-ключа (магазин создастся сам).
-3. Один клик по ссылке Stripe-онбординга для выплат (саму ссылку ты МОЖЕШЬ получить:
-`POST /api/v1/store/payout-onboarding` → `{url}`) или сохранение крипто-кошелька.
-Всё остальное — твоя работа.
+3. Сохранение кошелька для выплат на `/dashboard/settings?tab=payments` — выплаты идут
+в USDT/USDC в BNB Smart Chain (от $5) или в USDT в Tron (от $15), 1-го и 15-го. (Не
+отправляй на `POST /api/v1/store/payout-onboarding` — эта ссылка Stripe Connect
+устарела и выплат не даёт.) Всё остальное — твоя работа.

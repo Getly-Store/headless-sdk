@@ -32,7 +32,7 @@
   still processing — wait 2–5s and retry with the SAME key.
 - **Rate limits:** every response carries `X-RateLimit-Limit / -Remaining / -Reset`
   (seconds). Throttle proactively when `Remaining ≤ 1`. On 429, wait `Retry-After`
-  seconds and retry. Daily creation caps exist (products 20/day, posts 5/day,
+  seconds and retry. Daily creation caps exist (products 100/day, posts 5/day,
   coupons 30/day per key) — a 429 with code `quota_exceeded` resets on a 24h window;
   do NOT retry-loop it, report it to the user.
 - **Scopes:** a 403 `insufficient_scope` names the missing scope in
@@ -48,20 +48,27 @@
 | `rate_limited` | Sleep `Retry-After` seconds, retry (max 2). |
 | `quota_exceeded` | Daily cap. Stop, report, suggest resuming tomorrow. |
 | `validation_failed` | Fix the field named in `param`, re-send with the SAME Idempotency-Key. |
-| `publish_requires_file` | Attach a file first (flow below), then publish. |
+| `publish_requires_file` / `publish_requires_image` / `publish_requires_category` | Attach the file / add an image / set a `categoryId` (from `GET /api/categories`), then publish. |
+| `category_not_allowed` | That id is a system category — pick a marketplace one from `GET /api/categories`. |
 | `moderation_locked` / `not_publishable` | The product awaits (or failed) human review. NEVER retry-loop this. Report honestly: "awaiting Getly moderation". |
 | `idempotency_conflict` | Same key still processing → wait 2–5s, retry same key. |
 | `coupon_invalid` | List valid coupons via `GET /api/v1/coupons`, use one of those or create one. |
 | `high_discount_ack_required` | A ≥90% coupon needs `acknowledgeHighDiscount: true`. CONFIRM WITH THE HUMAN first — never auto-acknowledge. |
 | `expired` | Create a fresh resource (e.g. new checkout link). |
 | `license_invalid` / `activation_limit_reached` | Surface to the end user; suggest `deactivate` to free a seat. |
+| `license_expired` | The timed-access period the key was sold for ended — the buyer renews from the product page. |
+| `billing_not_approved` | Getly Billing writes need an approved application — the human applies at `/dashboard/billing`. Reads keep working. Don't retry. |
+| `plan_exists` / `plan_inactive` / `subscription_not_cancellable` | Billing: reuse or rename the plan (`externalId`), activate the plan, or accept that the subscription already ended. |
+| `widget_not_approved` / `widget_disabled` / `origin_not_allowed` / `challenge_required` / `not_purchasable` | Pay Widget gates — the seller requests access / enables the widget / adds the domain at `/dashboard/pay-widget`; free and pay-what-you-want products sell on the product page. |
+| `payment_method_unavailable` | That rail (card, paypal, crypto) is not live — `errorDetail.paymentMethods` lists the ones that are. |
+| `unknown_endpoint` | No such route — check `https://www.getly.store/llms-api.txt`. |
 
 ## The core flows (get these exactly right)
 
 ### Create → upload → publish a product
 
 ```
-1. POST /api/v1/products                 {name, priceCents, shortDescription, description?, categoryId?, tags?}   → draft product (id)
+1. POST /api/v1/products                 {name, priceCents, shortDescription, description, categoryId, licenseType?, tags?}   → draft product (id)
 2. POST /api/v1/products/{id}/files/presign   {fileName, fileSize, fileType}   → {uploadUrl, fileUrl}
 3. PUT  <uploadUrl>  with the RAW BYTES; Content-Length MUST equal fileSize; Content-Type = fileType
 4. POST /api/v1/products/{id}/files      {fileUrl, fileName, fileSize, fileType}   ← the attach step. DO NOT SKIP IT.
@@ -71,6 +78,12 @@ Step 4 is the one AI assistants forget: an uploaded-but-unattached file does not
 exist as a download and gets garbage-collected within 24h. Product images: same dance
 via `POST /api/v1/uploads/images/presign` (≤10MB, image/* only), then pass the
 returned `publicUrl` in the product's `images: [{url, altText}]`.
+
+Publishing needs a downloadable file, at least one image and a `categoryId` (a UUID
+from `GET /api/categories`); a missing one comes back as a machine code in
+`reasons[]`. `licenseType` (`personal` | `commercial` | `extended` | `cc0` |
+`custom`) states what the buyer may do with the file — optional, but ask the human
+rather than guessing: it is their licence, not yours.
 
 A brand-new store's first products may return `moderationStatus: "pending_review"`
 from publish — that is first-sale trust moderation, not an error. Say so honestly.
@@ -83,6 +96,8 @@ POST /api/v1/checkout-links   {productId, couponCode?, reference?, metadata?, su
 ```
 - `reference` (≤200 chars) = YOUR correlation id (chat id, user id). It comes back in
   the `sale.completed` webhook and in `GET /api/v1/checkout-links/{id}`.
+- Buyers pay with PayPal or USDT/USDC today (card checkout is paused); the link
+  page asks for their email first. Don't promise card payment.
 - The coupon is validated again at click time and auto-applied — the buyer never
   types a code. Never build discount logic client-side; the server owns prices.
 - No webhook receiver? Poll `GET /api/v1/checkout-links/{id}` (status:
@@ -111,19 +126,42 @@ PUBLIC endpoints (no API key — safe to embed):
 Register: `POST /api/v1/webhook-endpoints {url, events}` (scope `webhooks:manage`;
 the secret is returned ONCE). Events: `sale.completed`, `order.refunded`,
 `checkout_link.completed`, `license.activated`, `product.created`,
-`product.updated`, `review.created`, `download.completed`, `*`.
+`product.updated`, `review.created`, `download.completed`, `refund.created`,
+`access.expiring`, `access.expired`, `dispute.created`, `dispute.resolved`,
+`billing.subscription.created`, `billing.subscription.renewed`,
+`billing.payment_failed`, `billing.subscription.canceled`,
+`billing.subscription.expired`, `*`. `sale.completed` carries `buyerEmail` and
+`items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`, `isGift`) — send
+your own license keys to `buyerEmail`; `GET /api/v1/orders` returns the same
+address (`order.buyer.email`). Treat it as personal data.
 **Always verify signatures** — header `X-Getly-Signature-V2` = `t=<unix>,v1=<hex>`
 where `v1 = HMAC-SHA256(secret, t + "." + rawBody)`; reject if `|now - t| > 300s` or
 mismatch (timing-safe compare). `@getly/sdk` ships `verifyWebhookSignature()` — use
 it instead of hand-rolling. If you grant access on `sale.completed`, you MUST revoke
 it on `order.refunded`.
 
+### Recurring plans for YOUR OWN product (Getly Billing)
+
+For a SaaS/community/tool the user runs on their own site — not a catalogue
+listing. Scopes `read:billing` / `write:billing`; writes need an approved
+application (`billing_not_approved` until the human applies at `/dashboard/billing`).
+```
+POST /api/v1/billing/plans      {name, amount (cents ≥50), intervalUnit day|week|month|year, intervalCount?, externalId?}
+POST /api/v1/billing/checkout   {planId, customerRef, successUrl, cancelUrl, metadata?}   → {url, expiresAt}  (hosted page, 24h)
+GET  /api/v1/billing/subscriptions/{id}    → status active|past_due|canceled|expired
+POST /api/v1/billing/subscriptions/{id}/cancel   (stops renewal at period end — ask the human first)
+```
+Grant access while status is `active` or `past_due`, until `currentPeriodEnd`.
+`customerRef` comes back on every `billing.*` webhook as `externalCustomerRef`.
+Subscribers pay with PayPal or USDT/USDC today — one payment buys one period — or
+by card when that rail is live.
+
 ## Test without money
 
 Full checkout loop with zero charges: create a product with `priceCents: 0` (or a
 100%-off coupon — needs the human's `acknowledgeHighDiscount`), buy it through the
 product page (guest checkout: email only), watch `sale.completed` arrive. Flip the
-real price after. Never test with real cards.
+real price after. Never test with real payments.
 
 ## Security rules (non-negotiable)
 
@@ -158,20 +196,24 @@ them the embed — NOT an API integration. Use the MCP tool
 <button data-getly-buy data-store="STORE_SLUG" data-product="PRODUCT_SLUG">Buy</button>
 ```
 
-- No API key in the browser; no Stripe account for the seller. Card + Apple Pay /
-  Google Pay on the hosted popup automatically.
+- No API key in the browser; no payment account for the seller. The button asks
+  for the buyer's email and offers every rail that is live — PayPal and USDT/USDC
+  today (card checkout is paused and reappears on its own when it returns).
+- The store must be approved for the widget first (`widget_not_approved` until the
+  seller requests access at `/dashboard/pay-widget`).
 - `data-mode`: `auto` (default) / `popup` / `inline` / `redirect`. For a quiz,
   set `data-product` at runtime then call `window.GetlyPay.scan()`.
 - The script src is UNVERSIONED — never add `integrity=` or `?v=`.
 - **Delivery is server-side.** The `getly:pay:success` browser event is advisory
   only — NEVER unlock files/keys/content on it (a visitor can forge it). Verify
   real sales via the `sale.completed` / `checkout_link.completed` webhook.
-- The seller enables it (and, for inline Apple Pay, registers their domain) at
+- The seller requests access, enables it and lists allowed domains at
   `/dashboard/pay-widget`. Full guide: `docs/pay-widget.md`.
 
 ## The 3 human steps you cannot do for the user
 
-1. Sign up at getly.store. 2. Create the API key (auto-creates their store). 3. Click
-one Stripe payout-onboarding link (you CAN fetch it: `POST
-/api/v1/store/payout-onboarding` → `{url}`) or save a crypto wallet. Everything else
-is yours.
+1. Sign up at getly.store. 2. Create the API key (auto-creates their store). 3. Save a
+payout wallet at `/dashboard/settings?tab=payments` — payouts are USDT/USDC on BNB
+Smart Chain (min $5) or USDT on Tron (min $15), on the 1st and 15th. (Do not send
+them to `POST /api/v1/store/payout-onboarding` — that Stripe Connect link is
+deprecated and not a payout route.) Everything else is yours.

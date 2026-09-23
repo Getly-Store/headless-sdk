@@ -4,7 +4,7 @@
 
 **Give your AI assistant an API key. Get back a running digital-products business.**
 
-Products · Card + crypto checkout · File delivery · License keys · Blog · Payouts — all driven by API, SDK, or MCP.
+Products · PayPal + crypto checkout · File delivery · License keys · Blog · Subscriptions for your own product · Payouts — all driven by API, SDK, or MCP.
 
 [![CI](https://github.com/Getly-Store/headless-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/Getly-Store/headless-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-10b981.svg)](LICENSE)
@@ -65,7 +65,7 @@ const link = await getly.checkoutLinks.create({
   couponCode: 'FRIENDS20',
   reference: chatId,            // echoed back in the sale.completed webhook
 });
-// → link.url — buyer pays by card or crypto, no Getly account needed.
+// → link.url — buyer pays with PayPal or USDT/USDC, no Getly account needed.
 ```
 
 Prefer curl? The full copy-paste flow with expected responses: **[getly.store/developers](https://www.getly.store/developers)**.
@@ -88,7 +88,7 @@ Now this is a conversation, not a coding session:
 
 > *"Upload everything in ~/designs/spring-pack as a new product at $24, write a launch post for my blog, and give me a 15%-off link I can share on X."*
 
-18 tools: products (create/update/publish/upload), blog posts, coupons, checkout links, licenses, sales stats, category search. Destructive actions require explicit confirmation — a prompt-injected review can't nuke your store. `npx @getly/mcp init` writes the config for Claude Code / Cursor / Claude Desktop / Windsurf for you.
+27 tools: products (create/update/publish/upload), blog posts, coupons, checkout links, licenses, orders, sales stats, Getly Billing plans and subscriptions, category search, Pay Widget code. Destructive actions require explicit confirmation — a prompt-injected review can't nuke your store. `npx @getly/mcp init` writes the config for Claude Code / Cursor / Claude Desktop / Windsurf for you.
 
 ## 📦 What's in the box
 
@@ -100,7 +100,7 @@ Now this is a conversation, not a coding session:
 | [`@getly/auto-store`](packages/auto-store) | The folder → live store CLI (Claude-powered). |
 | [`create-getly-store`](packages/create-getly-store) | `npx create-getly-store my-shop` → a deployable Next.js storefront wired to your Getly store. |
 | [`examples/`](examples) | Telegram sales bot (sells in-chat, confirms payments), dependency-free storefront widget, one-line **Pay Widget** buy button. |
-| [**Pay Widget**](docs/pay-widget.md) | One `<script>` + a Buy button adds checkout (card + Apple Pay / Google Pay) to **any** site — no API key in the browser, no Stripe account for the seller. Getly delivers the file. |
+| [**Pay Widget**](docs/pay-widget.md) | One `<script>` + a Buy button adds checkout (buyer email + PayPal or USDT/USDC) to **any** site — no API key in the browser, no payment account for the seller. Getly delivers the file. |
 | [`openapi/getly-v1.yaml`](openapi/getly-v1.yaml) | The whole API, OpenAPI 3.1, examples on every operation. Also served at [getly.store/openapi.yaml](https://www.getly.store/openapi.yaml). |
 | [`llms.txt`](llms.txt) | The entire API reference as one file your AI can swallow. Also at [getly.store/llms-api.txt](https://www.getly.store/llms-api.txt). |
 | [`AGENTS.md`](AGENTS.md) | The golden prompt: paste into Cursor/ChatGPT and your AI uses the API correctly on the first try. |
@@ -111,8 +111,8 @@ Sales you drive through this SDK — API checkout links, the Pay Widget on your 
 
 | | **Getly (10% all-in on your own traffic)** | Typical payments-API stack (4–10% + fixed) |
 |---|---|---|
-| Payment processing (cards) | ✅ included | ✅ that's the 4–10% |
-| **Crypto checkout + crypto payouts** (USDT/USDC, 5 chains) | ✅ included | ❌ |
+| Payment processing (PayPal, crypto; card when it returns) | ✅ included | ✅ that's the 4–10% |
+| **Crypto checkout** (USDT/USDC, 5 chains) **+ stablecoin payouts** (BSC or Tron) | ✅ included | ❌ |
 | File hosting + delivery up to 2GB | ✅ included | ❌ bring your own S3/CDN |
 | **Marketplace traffic** (708-category catalog, search, AI recommendations) | ✅ included | ❌ you bring 100% of traffic |
 | License key issue + validation API | ✅ included | varies |
@@ -124,8 +124,9 @@ Sales you drive through this SDK — API checkout links, the Pay Widget on your 
 
 ## 🌍 Why builders actually pick Getly
 
-- **Crypto payouts, no bank needed.** USDT/USDC on Ethereum/Tron/BSC/Polygon/Solana, paid twice a month. If Stripe doesn't serve your country, we still do.
-- **Guest checkout.** Your buyers pay with an email and a card — no forced account creation killing your funnel.
+- **Stablecoin payouts, no bank needed.** USDT/USDC on BNB Smart Chain (from $5) or USDT on Tron (from $15), paid on the 1st and 15th — wherever you live.
+- **Guest checkout.** Your buyers pay with an email and PayPal or crypto — no forced account creation killing your funnel. (Card checkout is paused and comes back on its own when it returns.)
+- **Subscriptions for your own SaaS.** Getly Billing sells recurring plans for a product that lives on *your* site — hosted checkout, `billing.*` webhooks, `getly.billing` in the SDK.
 - **MCP-first.** Not "we have an API" — your AI assistant has *tools*.
 
 ## ⚙️ The honest bootstrap
@@ -134,7 +135,7 @@ Sales you drive through this SDK — API checkout links, the Pay Widget on your 
 
 1. Sign up at [getly.store](https://www.getly.store) (Google/GitHub/magic link).
 2. Create an API key → [dashboard/developer/keys](https://www.getly.store/dashboard/developer/keys) (creates your store automatically if needed).
-3. To get *paid*: click one Stripe onboarding link **or** paste a crypto wallet address (`POST /api/v1/store/payout-onboarding` returns the link — even this step is API-driven).
+3. To get *paid*: save a USDT/USDC wallet (BNB Smart Chain or Tron) at [dashboard/settings → Payments](https://www.getly.store/dashboard/settings?tab=payments).
 
 Everything after that — products, blog, discounts, checkout links, licenses — is your AI's job.
 
@@ -146,7 +147,7 @@ Create a $0 product (or a 100%-off coupon), run the full checkout-link → guest
 
 - [**Telegram sales bot**](examples/telegram-sales-bot) — sells your catalog in chat, drops pay links, confirms payment in the thread. The "AI closes deals mid-conversation" demo, running on a laptop.
 - [**Storefront widget**](examples/storefront-widget) — one `<script>` + one `<div>` on any site (v0, Lovable, Webflow, plain HTML) renders your products with Buy buttons. No API key in the browser, ever.
-- [**Pay Widget**](examples/pay-widget) — one `<script>` + a Buy button turns any site into a checkout for a single product. Card + Apple Pay / Google Pay on a hosted popup; Getly delivers the file and handles receipts + refunds. Full guide in [`docs/pay-widget.md`](docs/pay-widget.md).
+- [**Pay Widget**](examples/pay-widget) — one `<script>` + a Buy button turns any site into a checkout for a single product. The buyer enters an email and pays with PayPal or USDT/USDC; Getly delivers the file and handles receipts + refunds. Full guide in [`docs/pay-widget.md`](docs/pay-widget.md).
 - [**React snippets**](docs/react-snippets.md) — copy-paste `<GetlyStorefront/>` and `<GetlyBuyButton/>` for generated apps, plus a [ready prompt for v0/Lovable/Bolt](docs/v0-lovable-prompt.md).
 
 ## 🗺 Roadmap

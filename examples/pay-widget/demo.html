@@ -18,7 +18,8 @@
     <p class="note">
       ⚠️ These buttons mint <strong>real</strong> checkouts for the seeded
       <code>getly-demo</code> / <code>demo-doc</code> product ($1). You can cancel
-      on the Stripe page — nothing is charged unless you complete payment.
+      on the PayPal or crypto payment page — nothing is charged unless you
+      complete payment.
     </p>
 
     <!-- Load the widget once for the whole page. -->
@@ -26,7 +27,7 @@
 
     <section>
       <h2>Popup mode (default)</h2>
-      <p>Hosted Getly checkout in a popup. Apple Pay / Google Pay appear automatically.</p>
+      <p>Click for the chooser: an email field and one button per live rail (PayPal, USDT/USDC); the payment page opens in a popup.</p>
       <button
         class="buy"
         data-getly-buy
@@ -40,7 +41,7 @@
 
     <section>
       <h2>Inline mode</h2>
-      <p>Embedded Stripe checkout, rendered right here on the page.</p>
+      <p>The same chooser, rendered right here on the page.</p>
       <div
         data-getly-buy
         data-store="getly-demo"

@@ -1,7 +1,7 @@
 # Telegram sales bot
 
 Sell your Getly products inside a Telegram chat. Buyers browse the catalog, tap a
-product, get a payment link, pay by card — and the bot confirms the sale in the chat.
+product, get a payment link, pay with PayPal or USDT/USDC — and the bot confirms the sale in the chat.
 
 Runs on a laptop. No server, no public URL, no webhooks — a small polling loop
 (one status request per open link every 30 seconds) does the job.
@@ -19,8 +19,9 @@ bot:  ✅ Payment received for “Neon UI Kit” — check your email for the do
 
 ## How buyers receive files (honest note)
 
-Getly checkout links use **guest checkout**: Stripe collects the buyer's email during
-payment, and Getly emails the download link to that address. The buyer does **not**
+Getly checkout links use **guest checkout**: the payment page asks for the buyer's
+email before they pay (PayPal or USDT/USDC today — card checkout is paused), and
+Getly emails the download link to that address. The buyer does **not**
 need a Getly account, and the bot never sees or handles the files. So "check your
 email" is literal — that's where the product arrives.
 

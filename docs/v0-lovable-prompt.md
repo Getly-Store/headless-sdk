@@ -60,7 +60,7 @@ GET https://www.getly.store/api/v1/public/stores/YOUR_STORE_SLUG/products/{produ
    Never do arithmetic on formatted strings. Ignore any other price-looking fields.
 2. BUY: every product's buy button is a plain link to `item.urls.buy`, opened in a
    new tab with rel="noopener noreferrer". Do NOT build a cart, checkout form, or
-   payment UI — Getly's checkout handles payment (card + crypto) and file delivery.
+   payment UI — Getly's checkout handles payment (PayPal + USDT/USDC today; card checkout is paused) and file delivery.
 3. SAFETY: render all API strings (names, descriptions, alt text) as TEXT. Never
    inject them with innerHTML / dangerouslySetInnerHTML.
 4. STATES: implement all four — loading (skeleton cards), error ("Couldn't load

@@ -4,7 +4,7 @@
  * Flow:
  *   /catalog                 → lists the store's active products (public API, no key needed)
  *   tap a product button     → bot creates a checkout link (reference = chat id) and replies
- *                              with the pay URL — buyer pays by card, no Getly account needed
+ *                              with the pay URL — buyer pays with PayPal or USDT/USDC, no Getly account needed
  *   every 30s (polling loop) → bot checks each active link's status; on `completed` it
  *                              messages the chat that payment arrived
  *
@@ -111,7 +111,7 @@ bot.command('start', (ctx) =>
   ctx.reply(
     'Hi! I sell digital products right here in the chat.\n\n' +
       '/catalog — see what’s available\n\n' +
-      'Payment is by card via Getly; your files arrive by email right after checkout.',
+      'Payment is by PayPal or USDT/USDC via Getly; your files arrive by email right after checkout.',
   ),
 );
 
