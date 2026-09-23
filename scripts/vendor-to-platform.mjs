@@ -15,6 +15,29 @@ const platform = process.argv[2] || '/Users/Apple/Desktop/Getly.store';
 
 const esc = (s) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 
+// The platform keeps the daily product cap in ONE constant
+// (src/lib/api-caps.ts) and a platform test forbids the number as a literal
+// in these two routes — so every mention is written back as
+// ${V1_PRODUCTS_DAILY_CAP} and the route imports it. Refuse to vendor if the
+// spec's number disagrees with the platform's constant.
+const capsSrc = fs.readFileSync(path.join(platform, 'src/lib/api-caps.ts'), 'utf8');
+const capMatch = capsSrc.match(/export const V1_PRODUCTS_DAILY_CAP = (\d+);/);
+if (!capMatch) throw new Error('V1_PRODUCTS_DAILY_CAP not found in src/lib/api-caps.ts');
+const CAP = Number(capMatch[1]);
+const CAP_EXPR = '${V1_PRODUCTS_DAILY_CAP}';
+const CAP_PATTERNS = [
+  [new RegExp(`\\b${CAP}(?= per day per API key)`, 'g'), CAP_EXPR],
+  [new RegExp(`\\b${CAP}(?= products/(?:day|key))`, 'g'), CAP_EXPR],
+  [new RegExp(`(products )${CAP}(?=/day)`, 'g'), `$1${CAP_EXPR}`],
+];
+function substituteCap(escaped) {
+  let out = escaped;
+  for (const [re, rep] of CAP_PATTERNS) out = out.replace(re, rep);
+  return out;
+}
+// A cap phrase with a different number means the spec is stale — stop.
+const STALE_CAP = /\b(\d+) per day per API key|products (\d+)\/day|\b(\d+) products\/(?:day|key)/g;
+
 const spec = fs.readFileSync(path.join(repo, 'openapi/getly-v1.yaml'), 'utf8');
 const llms = fs.readFileSync(path.join(repo, 'llms.txt'), 'utf8');
 
@@ -49,13 +72,18 @@ const files = [
 ];
 
 for (const f of files) {
-  const escaped = esc(f.content);
+  for (const m of f.content.matchAll(STALE_CAP)) {
+    const n = Number(m[1] ?? m[2] ?? m[3]);
+    if (n !== CAP) throw new Error(`${f.out}: spec says a ${n} products/day cap, platform constant is ${CAP} — fix the spec first`);
+  }
+  const escaped = substituteCap(esc(f.content));
+  const usesCap = escaped.includes(CAP_EXPR);
   // round-trip safety: the escaped literal must evaluate back byte-identical
-  const roundtrip = new Function('return `' + escaped + '`;')();
+  const roundtrip = new Function('V1_PRODUCTS_DAILY_CAP', 'return `' + escaped + '`;')(CAP);
   if (roundtrip !== f.content) throw new Error(`round-trip mismatch for ${f.out}`);
   const route = `${f.header}
 import { NextResponse } from 'next/server';
-
+${usesCap ? "import { V1_PRODUCTS_DAILY_CAP } from '@/lib/api-caps';\n" : ''}
 const ${f.constName} = \`${escaped}\`;
 
 export function GET() {

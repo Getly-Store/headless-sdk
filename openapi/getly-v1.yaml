@@ -152,7 +152,7 @@ security:
   - bearerAuth: []
 tags:
   - name: Products
-    description: Seller product catalog (create, publish, files).
+    description: Seller product catalog (create, publish, files, your own license-key pool).
   - name: Posts
     description: Creator blog posts (markdown source of truth).
   - name: Coupons

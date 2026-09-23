@@ -286,6 +286,20 @@ function render(spec) {
     }
   }
 
+  // API areas — the tag descriptions carry the product-level rules (e.g. what
+  // Getly Billing is and who may write to it) that no single endpoint repeats.
+  const tags = Array.isArray(spec.tags) ? spec.tags : [];
+  if (tags.length > 0) {
+    push('## API areas');
+    push('');
+    for (const tag of tags) {
+      if (!tag?.name) continue;
+      const desc = String(tag.description ?? '').trim().replace(/\s*\n\s*/g, ' ');
+      push(desc ? `- **${tag.name}** — ${desc}` : `- **${tag.name}**`);
+    }
+    push('');
+  }
+
   // Endpoints
   push('## Endpoints');
   push('');

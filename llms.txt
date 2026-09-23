@@ -179,6 +179,21 @@ money integer cents):
 
 Events: `sale.completed`, `product.created`, `product.updated`, `review.created`, `download.completed`, `refund.created`, `order.refunded`, `checkout_link.completed`, `license.activated`, `access.expiring`, `access.expired`, `dispute.created`, `dispute.resolved`, `billing.subscription.created`, `billing.subscription.renewed`, `billing.payment_failed`, `billing.subscription.canceled`, `billing.subscription.expired`.
 
+## API areas
+
+- **Products** — Seller product catalog (create, publish, files, your own license-key pool).
+- **Posts** — Creator blog posts (markdown source of truth).
+- **Coupons** — Store discount codes.
+- **Checkout Links** — Instant pay links; the payment session is created only when the buyer opens the link.
+- **Billing** — Getly Billing — recurring plans for the seller's OWN product (a SaaS, community or tool hosted on your site). Scopes read:billing / write:billing. Not a marketplace listing: the plan never appears in the catalogue and the subscriber lands back on your site. Writes require an approved application (the seller applies at /dashboard/billing with a public website and a description of what is sold; until approval every write answers 403 billing_not_approved, reads keep working). The take is the own-traffic rate (10%). The hosted page offers the rails that are live: PayPal and USDT/USDC today, where one payment buys ONE period, the subscriber is reminded seven days before the end and an unpaid period closes with billing.subscription.expired; a card subscription (when the card rail is live) renews by itself. Subscribers cancel at https://www.getly.store/subscriptions and keep access to the end of the paid period. Every billing.* webhook carries externalCustomerRef. Landing: https://www.getly.store/sell/billing
+- **Licenses** — License keys — public validate/activate/deactivate + seller list.
+- **Uploads** — Presigned direct-to-storage uploads.
+- **Webhook Endpoints** — Webhook endpoint management.
+- **Store** — Store profile and creation.
+- **Orders** — Read-only orders of the key's store.
+- **Analytics** — Sales analytics and money snapshot.
+- **Public** — No-auth endpoints (storefront widget, license checks, /go redirect).
+
 ## Endpoints
 
 ### GET /api/v1/products — List products of your store (cursor pagination)
