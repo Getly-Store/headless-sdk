@@ -88,7 +88,7 @@ Now this is a conversation, not a coding session:
 
 > *"Upload everything in ~/designs/spring-pack as a new product at $24, write a launch post for my blog, and give me a 15%-off link I can share on X."*
 
-27 tools: products (create/update/publish/upload), blog posts, coupons, checkout links, licenses, orders, sales stats, Getly Billing plans and subscriptions, category search, Pay Widget code. Destructive actions require explicit confirmation — a prompt-injected review can't nuke your store. `npx @getly/mcp init` writes the config for Claude Code / Cursor / Claude Desktop / Windsurf for you.
+30 tools: products (create/update/publish/upload), your own license-key pool, blog posts, coupons, checkout links, licenses, orders, sales stats, Getly Billing plans and subscriptions, category search, Pay Widget code. Destructive actions require explicit confirmation — a prompt-injected review can't nuke your store. `npx @getly/mcp init` writes the config for Claude Code / Cursor / Claude Desktop / Windsurf for you.
 
 ## 📦 What's in the box
 
@@ -126,6 +126,7 @@ Sales you drive through this SDK — API checkout links, the Pay Widget on your 
 
 - **Stablecoin payouts, no bank needed.** USDT/USDC on BNB Smart Chain (from $5) or USDT on Tron (from $15), paid on the 1st and 15th — wherever you live.
 - **Guest checkout.** Your buyers pay with an email and PayPal or crypto — no forced account creation killing your funnel. (Card checkout is paused and comes back on its own when it returns.)
+- **Deliver your own license keys.** Upload your keys to a product's pool (`getly.products.keys.add`); every sale hands out the next one, and `sale.completed` carries it as `items[].licenseKey`.
 - **Subscriptions for your own SaaS.** Getly Billing sells recurring plans for a product that lives on *your* site — hosted checkout, `billing.*` webhooks, `getly.billing` in the SDK.
 - **MCP-first.** Not "we have an API" — your AI assistant has *tools*.
 

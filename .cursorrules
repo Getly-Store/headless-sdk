@@ -59,6 +59,7 @@
 | `expired` | Create a fresh resource (e.g. new checkout link). |
 | `license_invalid` / `activation_limit_reached` | Surface to the end user; suggest `deactivate` to free a seat. |
 | `license_expired` | The timed-access period the key was sold for ended — the buyer renews from the product page. |
+| `key_not_available` | Only an unsold pool key can be removed — re-read `GET /api/v1/products/{id}/keys`, don't retry. |
 | `billing_not_approved` | Getly Billing writes need an approved application — the human applies at `/dashboard/billing`. Reads keep working. Don't retry. |
 | `plan_exists` / `plan_inactive` / `subscription_not_cancellable` | Billing: reuse or rename the plan (`externalId`), activate the plan, or accept that the subscription already ended. |
 | `widget_not_approved` / `widget_disabled` / `origin_not_allowed` / `challenge_required` / `not_purchasable` | Pay Widget gates — the seller requests access / enables the widget / adds the domain at `/dashboard/pay-widget`; free and pay-what-you-want products sell on the product page. |
@@ -123,6 +124,18 @@ PUBLIC endpoints (no API key — safe to embed):
 `POST /api/v1/licenses/activate {key, fingerprint, label?}` ·
 `POST /api/v1/licenses/deactivate {key, fingerprint}`.
 
+**Deliver your own license keys (key pool).** Already have keys (a game, a
+licence server, a partner's codes)? Set `keyPoolEnabled: true` on the product
+instead of `licenseKeysEnabled` (the two are mutually exclusive), then
+`POST /api/v1/products/{id}/keys {keys: [...]}` — up to 5000 per request. Each
+sale hands the buyer the next unsold key; `sale.completed` carries it as
+`items[].licenseKey` (null while the pool is empty — the buyer gets it by email
+the moment you add more). `GET .../keys` shows available / issued / waiting and
+masked keys; `DELETE .../keys/{keyId}` removes an UNSOLD key (an issued one
+answers `key_not_available`). `keyPoolLowThreshold` (1–1000) sets the
+"running low" email. Pool keys are the seller's own: the public
+`/licenses/validate` endpoints do not check them. Never echo keys into chat.
+
 ### Webhooks
 
 Register: `POST /api/v1/webhook-endpoints {url, events}` (scope `webhooks:manage`;
@@ -133,8 +146,9 @@ the secret is returned ONCE). Events: `sale.completed`, `order.refunded`,
 `billing.subscription.created`, `billing.subscription.renewed`,
 `billing.payment_failed`, `billing.subscription.canceled`,
 `billing.subscription.expired`, `*`. `sale.completed` carries `buyerEmail` and
-`items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`, `isGift`) — send
-your own license keys to `buyerEmail`; `GET /api/v1/orders` returns the same
+`items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`, `isGift`,
+`licenseKey`) — `licenseKey` is the key issued for that item (Getly-generated or
+from your key pool); if you issue keys yourself, send them to `buyerEmail`; `GET /api/v1/orders` returns the same
 address (`order.buyer.email`). Treat it as personal data.
 **Always verify signatures** — header `X-Getly-Signature-V2` = `t=<unix>,v1=<hex>`
 where `v1 = HMAC-SHA256(secret, t + "." + rawBody)`; reject if `|now - t| > 300s` or

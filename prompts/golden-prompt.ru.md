@@ -56,6 +56,7 @@ https://www.getly.store/llms-api.txt · OpenAPI: https://www.getly.store/openapi
 | `expired` | Создай свежий ресурс (например, новую платёжную ссылку). |
 | `license_invalid` / `activation_limit_reached` | Покажи конечному пользователю; предложи `deactivate`, чтобы освободить слот. |
 | `license_expired` | Кончился срок доступа, под который продан ключ — покупатель продлевает на странице товара. |
+| `key_not_available` | Удалить можно только непроданный ключ пула — перечитай `GET /api/v1/products/{id}/keys`, не ретрай. |
 | `billing_not_approved` | Запись в Getly Billing требует одобренной заявки — человек подаёт её на `/dashboard/billing`. Чтение работает. Не ретраить. |
 | `plan_exists` / `plan_inactive` / `subscription_not_cancellable` | Billing: другой `externalId`, активируй план, или подписка уже закончилась. |
 | `widget_not_approved` / `widget_disabled` / `origin_not_allowed` / `challenge_required` / `not_purchasable` | Ограничения Pay-виджета — продавец запрашивает доступ / включает виджет / добавляет домен на `/dashboard/pay-widget`; бесплатные и PWYW-товары продаются на странице товара. |
@@ -120,6 +121,18 @@ POST /api/v1/checkout-links {productId, couponCode?, reference?, metadata?, succ
 `POST /api/v1/licenses/activate {key, fingerprint, label?}` ·
 `POST /api/v1/licenses/deactivate {key, fingerprint}`.
 
+**Свои лицензионные ключи (пул ключей).** Ключи уже есть (игра, свой сервер
+лицензий, коды партнёра)? Включи на товаре `keyPoolEnabled: true` вместо
+`licenseKeysEnabled` (одно исключает другое) и загрузи их:
+`POST /api/v1/products/{id}/keys {keys: [...]}` — до 5000 за запрос. Каждая продажа
+выдаёт покупателю следующий непроданный ключ; `sale.completed` несёт его в
+`items[].licenseKey` (null, пока пул пуст — покупатель получит ключ письмом, как только
+ты добавишь новые). `GET .../keys` — доступно / выдано / ждут и маскированные ключи;
+`DELETE .../keys/{keyId}` удаляет НЕпроданный ключ (выданный отвечает
+`key_not_available`). `keyPoolLowThreshold` (1–1000) — когда прислать письмо «ключи
+заканчиваются». Публичные `/licenses/validate` ключи из пула не проверяют. Никогда не
+выводи ключи в чат.
+
 ### Вебхуки
 
 Регистрация: `POST /api/v1/webhook-endpoints {url, events}` (scope
@@ -130,8 +143,9 @@ POST /api/v1/checkout-links {productId, couponCode?, reference?, metadata?, succ
 `dispute.resolved`, `billing.subscription.created`, `billing.subscription.renewed`,
 `billing.payment_failed`, `billing.subscription.canceled`,
 `billing.subscription.expired`, `*`. `sale.completed` несёт `buyerEmail` и
-`items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`, `isGift`) — свои
-лицензионные ключи отправляй на `buyerEmail`; тот же адрес отдаёт
+`items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`, `isGift`,
+`licenseKey`) — `licenseKey` это выданный ключ (сгенерированный Getly или из твоего
+пула); если выдаёшь ключи сам — отправляй их на `buyerEmail`; тот же адрес отдаёт
 `GET /api/v1/orders` (`order.buyer.email`). Это персональные данные.
 **Всегда проверяй подпись**: заголовок `X-Getly-Signature-V2` = `t=<unix>,v1=<hex>`,
 где `v1 = HMAC-SHA256(secret, t + "." + rawBody)`; отклоняй при `|now - t| > 300s`
