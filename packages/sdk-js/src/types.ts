@@ -43,7 +43,7 @@ export interface MutationOptions {
 export type ProductStatus = 'draft' | 'active' | 'pending_review' | 'archived' | 'rejected';
 
 /**
- * What the buyer may do with the file — shown next to the buy button, in the
+ * What the buyer may do with the file - shown next to the buy button, in the
  * product FAQ and in the page's structured data. `null` = not stated.
  */
 export type ProductLicenseType = 'personal' | 'commercial' | 'extended' | 'cc0' | 'custom';
@@ -87,7 +87,7 @@ export interface Product {
   /** Integer minor units (the canonical money field). */
   priceCents: number;
   compareAtPriceCents: number | null;
-  /** Legacy field — same integer cents as priceCents. Prefer priceCents. */
+  /** Legacy field - same integer cents as priceCents. Prefer priceCents. */
   price: number;
   status: ProductStatus | string;
   categoryId: string | null;
@@ -102,10 +102,16 @@ export interface Product {
   keyPoolLowThreshold: number;
   /** Free trial / demo download shown on the product page before purchase; null = none. Always present. */
   demoUrl: string | null;
-  /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period on a one-time payment. */
+  /** Timed access: 'lifetime' (default) or 'timed' - sold as access for a period on a one-time payment. */
   accessMode: 'lifetime' | 'timed';
   /** Present when relations were loaded (GET single). The periods on offer, shortest first. */
   accessTerms?: AccessTerm[];
+  /**
+   * The languages you wrote yourself (ru, de, es, fr, uk), each mapped to a
+   * fingerprint of the English text it was written from. A missing language is
+   * translated automatically by Getly.
+   */
+  sellerTranslations?: Partial<Record<ListingLanguage, string>>;
   createdVia?: string | null;
   urls: ProductUrls;
   createdAt: string;
@@ -118,7 +124,7 @@ export interface Product {
   [key: string]: unknown;
 }
 
-/** Product returned by create/publish — may carry moderation info. */
+/** Product returned by create/publish - may carry moderation info. */
 export interface ProductWithModeration extends Product {
   /** Set when the first-sale gate / AI classifier queued the product. */
   moderationStatus?: 'pending_review';
@@ -126,6 +132,8 @@ export interface ProductWithModeration extends Product {
   note?: string;
   /** Number of files attached inline at creation. */
   attachedFiles?: number;
+  /** true when compareAtPriceCents was sent on create: a new listing cannot start on a sale, so it was not stored. */
+  compareAtIgnored?: boolean;
 }
 
 export interface ProductListParams extends CursorListParams {
@@ -161,11 +169,29 @@ export interface AccessTermInput {
   isActive?: boolean;
 }
 
+/** Languages a listing can carry besides English (the listing itself is written in English). */
+export type ListingLanguage = 'ru' | 'de' | 'es' | 'fr' | 'uk';
+
+/** Your own text for one language. Must be written in that language (else 400 translation_wrong_language). */
+export interface ListingTranslation {
+  name: string;
+  shortDescription?: string;
+  /** HTML, same rules as the English description. */
+  description?: string;
+}
+
+/**
+ * Your own translations, per language. `null` hands that language back to
+ * Getly's automatic translation; a language you leave out is untouched. A
+ * language you write is never overwritten automatically.
+ */
+export type ListingTranslationsInput = Partial<Record<ListingLanguage, ListingTranslation | null>>;
+
 export interface ProductCreateInput {
   name: string;
   description?: string;
   shortDescription?: string;
-  /** Integer minor units — the preferred money field. */
+  /** Integer minor units - the preferred money field. */
   priceCents?: number;
   compareAtPriceCents?: number | null;
   /**
@@ -177,7 +203,7 @@ export interface ProductCreateInput {
   tags?: string[];
   /**
    * 'active' requires at least one downloadable file in `files`, at least one
-   * image and a categoryId — otherwise publish_requires_file /
+   * image and a categoryId - otherwise publish_requires_file /
    * publish_requires_image / publish_requires_category. Default: draft.
    */
   status?: 'active' | 'draft';
@@ -196,7 +222,7 @@ export interface ProductCreateInput {
   /**
    * Sell YOUR OWN keys: each buyer gets the next unsold key from the pool
    * (add them with products.keys.add once the product exists). Mutually
-   * exclusive with licenseKeysEnabled — both true is a 400.
+   * exclusive with licenseKeysEnabled - both true is a 400.
    */
   keyPoolEnabled?: boolean;
   /** 1-1000 (default 5): when the "running low" email is sent. */
@@ -208,13 +234,15 @@ export interface ProductCreateInput {
    */
   demoUrl?: string | null;
   /**
-   * Timed access — sell access for a period on a ONE-TIME payment (no recurring
+   * Timed access - sell access for a period on a ONE-TIME payment (no recurring
    * billing). The buyer picks a term, access ends on a date, buying again extends
    * it; your webhook endpoint receives access.expiring / access.expired. A timed
    * product cannot be published without at least one active term.
    */
   accessMode?: 'lifetime' | 'timed';
   accessTerms?: AccessTermInput[];
+  /** Your own ru/de/es/fr/uk text; the name and description above stay in English (since 2026-11-13). */
+  translations?: ListingTranslationsInput;
 }
 
 export interface ProductUpdateInput {
@@ -243,6 +271,8 @@ export interface ProductUpdateInput {
   accessMode?: 'lifetime' | 'timed';
   /** REPLACES the terms table: rows with an id are updated, rows left out are retired. */
   accessTerms?: AccessTermInput[];
+  /** Your own ru/de/es/fr/uk text; `null` for a language hands it back to automatic translation. */
+  translations?: ListingTranslationsInput;
 }
 
 export interface FilePresign {
@@ -257,7 +287,7 @@ export interface FilePresign {
 
 export interface PresignFileInput {
   fileName: string;
-  /** Exact byte count — enforced by the presigned PUT signature. */
+  /** Exact byte count - enforced by the presigned PUT signature. */
   fileSize: number;
   fileType?: string;
 }
@@ -290,12 +320,12 @@ export interface CreateManyItemResult {
 }
 
 export interface CreateManyOptions {
-  /** Parallel workers (default 2 — plays nicely with the 30/min sublimit). */
+  /** Parallel workers (default 2 - plays nicely with the 30/min sublimit). */
   concurrency?: number;
   /** Called after each item settles. */
   onProgress?: (result: CreateManyItemResult, completed: number, total: number) => void;
   /**
-   * Stable Idempotency-Key prefix — item i is sent with key `${prefix}:${i}`,
+   * Stable Idempotency-Key prefix - item i is sent with key `${prefix}:${i}`,
    * so re-running the same batch replays already-created products instead of
    * duplicating them.
    */
@@ -310,12 +340,12 @@ export type ProductKeyStatus = 'available' | 'issued';
 
 export interface ProductKey {
   id: string;
-  /** Masked (e.g. `ABCD…WXYZ`) — the plaintext is never returned. */
+  /** Masked (e.g. `ABCD…WXYZ`) - the plaintext is never returned. */
   masked: string;
   status: ProductKeyStatus | string;
   issuedAt: string | null;
   orderItemId: string | null;
-  /** The sale this key went to was refunded — revoke the key in your own system. */
+  /** The sale this key went to was refunded - revoke the key in your own system. */
   refunded: boolean;
 }
 
@@ -325,7 +355,7 @@ export interface ProductKeyPool {
   counts: {
     available: number;
     issued: number;
-    /** Paid orders waiting because the pool ran out — filled the moment you add keys. */
+    /** Paid orders waiting because the pool ran out - filled the moment you add keys. */
     waiting: number;
   };
   /** One page, in sale order. */
@@ -344,11 +374,11 @@ export interface ProductKeyListParams {
 
 export interface ProductKeysAddResult {
   added: number;
-  /** Already in the pool — not added. */
+  /** Already in the pool - not added. */
   duplicates: number;
-  /** Repeated within this request — not added. */
+  /** Repeated within this request - not added. */
   duplicatesInInput: number;
-  /** Over 500 characters — not added. */
+  /** Over 500 characters - not added. */
   tooLong: number;
   blank: number;
   /** Waiting buyers who got a key from this batch. */
@@ -389,7 +419,7 @@ export interface PostCreateInput {
   /** Markdown only (writes never accept HTML). ≤100KB. */
   contentMarkdown: string;
   excerpt?: string;
-  /** https URL — prefer uploads.presignImage() output for guaranteed render. */
+  /** https URL - prefer uploads.presignImage() output for guaranteed render. */
   coverImageUrl?: string;
   /** Auto-generated from the title when omitted. */
   slug?: string;
@@ -413,13 +443,13 @@ export type CouponType = 'percentage' | 'fixed';
 
 export interface Coupon {
   id: string;
-  /** Coupons always belong to a store — platform-wide codes were retired. */
+  /** Coupons always belong to a store - platform-wide codes were retired. */
   storeId: string;
   code: string;
   type: CouponType | string;
   /** percentage → 1-100; fixed → cents (see valueCents). */
   value: number;
-  /** Present only for fixed coupons — the discount in cents. */
+  /** Present only for fixed coupons - the discount in cents. */
   valueCents?: number;
   minOrderAmountCents: number;
   maxUses: number | null;
@@ -463,7 +493,7 @@ export type CheckoutLinkStatus = 'open' | 'completed' | 'expired';
 
 export interface CheckoutLink {
   id: string;
-  /** Send the buyer here — https://www.getly.store/go/<id>. */
+  /** Send the buyer here - https://www.getly.store/go/<id>. */
   url: string;
   productId: string;
   status: CheckoutLinkStatus | string;
@@ -484,7 +514,7 @@ export interface CheckoutLinkCreateInput {
   productId: string;
   couponCode?: string;
   affiliateCode?: string;
-  /** Your correlation id (≤200 chars) — echoed in sale.completed webhooks. */
+  /** Your correlation id (≤200 chars) - echoed in sale.completed webhooks. */
   reference?: string;
   /** String-valued object, ≤2KB, ≤20 entries. */
   metadata?: Record<string, string>;
@@ -499,7 +529,7 @@ export interface CheckoutLinkListParams extends CursorListParams {
   status?: CheckoutLinkStatus;
 }
 
-/** GET /api/v1/checkout-links/[id] — status polling shape. */
+/** GET /api/v1/checkout-links/[id] - status polling shape. */
 export interface CheckoutLinkPollResult {
   id: string;
   url: string;
@@ -575,7 +605,7 @@ export type ImageContentType = 'image/png' | 'image/jpeg' | 'image/webp' | 'imag
 
 export interface ImagePresignInput {
   contentType: ImageContentType;
-  /** Exact byte count (≤10MB) — enforced by the presigned PUT signature. */
+  /** Exact byte count (≤10MB) - enforced by the presigned PUT signature. */
   fileSize: number;
   fileName?: string;
 }
@@ -637,7 +667,7 @@ export interface WebhookEndpoint {
 }
 
 export interface WebhookEndpointWithSecret extends WebhookEndpoint {
-  /** HMAC secret — returned ONCE at creation, store it immediately. */
+  /** HMAC secret - returned ONCE at creation, store it immediately. */
   secret: string;
 }
 
@@ -673,7 +703,7 @@ export interface Store {
 export interface StoreCreateInput {
   /** 3-100 characters. */
   name: string;
-  /** Optional — auto-generated from the name when omitted. */
+  /** Optional - auto-generated from the name when omitted. */
   slug?: string;
   description?: string;
 }
@@ -686,7 +716,7 @@ export interface StoreUpdateInput {
 }
 
 /**
- * @deprecated The endpoint is retired and answers 410 payout_route_retired —
+ * @deprecated The endpoint is retired and answers 410 payout_route_retired -
  * this shape is never returned any more. Seller payouts are stablecoin-only
  * (USDT/USDC on BNB Smart Chain, min $5; USDT on Tron, min $15).
  */
@@ -769,7 +799,7 @@ export interface OrderBuyer {
 export interface Order {
   id: string;
   buyerId: string | null;
-  /** Same as buyer.email — the address to deliver your own license keys to. */
+  /** Same as buyer.email - the address to deliver your own license keys to. */
   buyerEmail: string | null;
   buyer: OrderBuyer | null;
   status: string;
@@ -787,6 +817,22 @@ export interface Order {
 /** A buyer payment rail. Card checkout is paused today; read `paymentMethods`. */
 export type PaymentMethod = 'card' | 'paypal' | 'crypto';
 
+/** Compact public card by product slug (GET /api/v1/public/products/{slug}). */
+export interface PublicProductCard {
+  slug: string;
+  name: string;
+  shortDescription: string | null;
+  /** What a buyer pays right now (a live flash sale is applied). */
+  priceCents: number;
+  currency: string;
+  avgRating: number | null;
+  reviewCount: number;
+  /** First image, or null. */
+  imageUrl: string | null;
+  store: { name: string; slug: string };
+  urls: { product: string };
+}
+
 export interface PublicProduct {
   id: string;
   slug: string;
@@ -801,7 +847,7 @@ export interface PublicProduct {
   descriptionDe?: string;
   /** Integer minor units. */
   priceCents: number;
-  /** Legacy — same cents value as priceCents. */
+  /** Legacy - same cents value as priceCents. */
   price: number;
   currency: 'USD';
   avgRating: number;
@@ -833,7 +879,7 @@ export interface PublicCheckoutInput {
   linkId?: string;
   /** Rail to pay with. Must be live (see PublicProduct.paymentMethods); default = first live rail. */
   method?: PaymentMethod;
-  /** Required for paypal and crypto — receipt and download links go here. */
+  /** Required for paypal and crypto - receipt and download links go here. */
   email?: string;
   /** Card only: 'inline' returns clientSecret + publishableKey. */
   mode?: 'popup' | 'redirect' | 'inline';
@@ -858,7 +904,7 @@ export interface PublicCheckoutResult {
   publishableKey?: string;
 }
 
-/** `check: true` — every configuration check, no payment. */
+/** `check: true` - every configuration check, no payment. */
 export interface PublicCheckoutCheckResult {
   check: 'ok';
   productName: string;
@@ -892,7 +938,7 @@ export interface SalesAnalytics {
 }
 
 // ---------------------------------------------------------------------------
-// Getly Billing — recurring plans for your OWN product (scopes read:billing / write:billing)
+// Getly Billing - recurring plans for your OWN product (scopes read:billing / write:billing)
 // ---------------------------------------------------------------------------
 
 export type BillingIntervalUnit = 'day' | 'week' | 'month' | 'year';
@@ -924,7 +970,7 @@ export interface BillingPlanCreateInput {
   name: string;
   /** ≤2000 chars. */
   description?: string | null;
-  /** Integer cents, minimum 50. */
+  /** Integer cents, minimum 200 ($2.00). */
   amount: number;
   /** Only 'usd' today. */
   currency?: 'usd';
@@ -955,7 +1001,7 @@ export interface BillingPlanListParams {
 
 export interface BillingCheckoutInput {
   planId: string;
-  /** YOUR id for this customer (≤255 chars) — echoed as externalCustomerRef. */
+  /** YOUR id for this customer (≤255 chars) - echoed as externalCustomerRef. */
   customerRef?: string | null;
   /** https URL on your site. */
   successUrl: string;
@@ -966,7 +1012,7 @@ export interface BillingCheckoutInput {
 }
 
 export interface BillingCheckoutResult {
-  /** Hosted subscribe page on getly.store — valid 24h. */
+  /** Hosted subscribe page on getly.store - valid 24h. */
   url: string;
   expiresAt: string;
 }
@@ -1020,7 +1066,7 @@ export interface BillingSubscriptionListResult {
 }
 
 // ---------------------------------------------------------------------------
-// Webhook payloads (the `data` of each delivery) — integer cents throughout
+// Webhook payloads (the `data` of each delivery) - integer cents throughout
 // ---------------------------------------------------------------------------
 
 export interface SaleCompletedItem {
@@ -1032,7 +1078,7 @@ export interface SaleCompletedItem {
   isGift: boolean;
   /**
    * The key issued for this item (Getly-generated or from your key pool), or
-   * null when the product has no keys or the pool was empty — the buyer then
+   * null when the product has no keys or the pool was empty - the buyer then
    * gets the key by email as soon as you add more.
    */
   licenseKey: string | null;

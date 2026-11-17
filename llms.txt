@@ -1,8 +1,8 @@
 # Getly v1 API
 
-> Run a digital-products store entirely through HTTP — products, files, blog posts, coupons, checkout links, license keys, webhooks and payouts.
+> Run a digital-products store entirely through HTTP - products, files, blog posts, coupons, checkout links, license keys, webhooks and payouts.
 
-Generated from `openapi/getly-v1.yaml` (github.com/Getly-Store/headless-sdk) — do not edit by hand; run `node scripts/generate-llms-txt.mjs`.
+Generated from `openapi/getly-v1.yaml` (github.com/Getly-Store/headless-sdk) - do not edit by hand; run `node scripts/generate-llms-txt.mjs`.
 
 Base URL: https://www.getly.store
 Machine-readable spec: https://www.getly.store/openapi.yaml
@@ -42,7 +42,7 @@ Send `Authorization: Bearer <key>`. Create keys at
 https://www.getly.store/dashboard/developer/keys and grant only the
 scopes you need. Keys look like `getly_sk_live_<64 hex>` (legacy `gk_`
 keys keep working; rotated keys have a 24h grace window). Read the key
-from the GETLY_API_KEY environment variable — never hardcode, never
+from the GETLY_API_KEY environment variable - never hardcode, never
 log, never accept it as a CLI/tool argument.
 
 Scopes: read:products, write:products, read:orders, read:store,
@@ -54,7 +54,7 @@ checkout:create, read:billing, write:billing.
 
 - Auth: send `Authorization: Bearer <key>`. Keys look like `getly_sk_live_<hex>`
   (legacy `gk_` keys keep working). Read the key from the GETLY_API_KEY
-  environment variable — never hardcode it, never pass it as a CLI argument,
+  environment variable - never hardcode it, never pass it as a CLI argument,
   never log it.
 - Money: ALL amounts are integer cents (minor units) via `priceCents`,
   `compareAtPriceCents`, `discountedPriceCents`, `amountCents`,
@@ -63,15 +63,15 @@ checkout:create, read:billing, write:billing.
 - Envelope: success responses are `{ "success": true, "data": ... }`;
   errors are `{ "success": false, "error": "<human message>", "errorDetail":
   { "code", "message", "hint", "docsUrl", "param?" } }`. Branch on
-  `errorDetail.code` — it is stable; `hint` says what to DO next.
+  `errorDetail.code` - it is stable; `hint` says what to DO next.
 - Pagination: cursor-based. Lists return `{ "items": [...], "nextCursor":
   "<opaque>" | null }`; pass `?cursor=` to get the next page. The cursor is
-  base64("createdAtISO|id") — treat it as opaque. `limit` is 1-100, default 20.
+  base64("createdAtISO|id") - treat it as opaque. `limit` is 1-100, default 20.
   (Exception: GET /api/v1/orders is legacy page/limit offset pagination.)
 - Idempotency: send an `Idempotency-Key` header (any unique string, ≤255
   chars) on every POST. Replays of a stored result return it verbatim with
   `Idempotency-Replayed: true`; a key still processing returns 409
-  `idempotency_conflict` — wait 2-5s and retry with the SAME key. Keys live 24h.
+  `idempotency_conflict` - wait 2-5s and retry with the SAME key. Keys live 24h.
 - Rate limits: every v1 response carries `X-RateLimit-Limit`,
   `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the window
   resets). 429s also carry `Retry-After` (seconds). Throttle proactively when
@@ -79,52 +79,52 @@ checkout:create, read:billing, write:billing.
   posts 5/day, coupons 30/day per key) return code `quota_exceeded`.
 - CORS: all v1 routes answer OPTIONS preflight and send
   `Access-Control-Allow-Origin: *`.
-- Payments: buyers pay with PayPal or stablecoins (USDT/USDC on BNB Smart
-  Chain, Tron, Ethereum, Polygon or Solana). Card checkout is paused and may
-  return; the public product endpoint's `paymentMethods` array says which
-  rails are live right now (card | paypal | crypto). Seller payouts go out on
-  the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) or USDT on
-  Tron (minimum $15).
-- Coupons always belong to a store — there are no platform-wide codes.
+- Payments: buyers pay by card or with stablecoins (USDT/USDC on BNB Smart Chain, Tron, Ethereum, Polygon or Solana). PayPal is no longer accepted; the public product endpoint's `paymentMethods` array says which
+  rails are live right now (card | crypto). Seller payouts go out on
+  the 1st and 15th in USDT/USDC on BNB Smart Chain (minimum $5) only;
+  Tron payouts ended after the 15 November 2026 run.
+- Coupons always belong to a store - there are no platform-wide codes.
 
 ## Error codes
 
 Every error response is `{ "success": false, "error": "<message>", "errorDetail": { "code", "message", "hint", "docsUrl", "param?" } }`. Branch on `errorDetail.code`:
 
-- `unauthorized` — Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys — read it from an environment variable, never hardcode it.
-- `insufficient_scope` — Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
-- `rate_limited` — Wait for the number of seconds in the Retry-After header, then retry. Throttle proactively when X-RateLimit-Remaining gets low.
-- `validation_failed` — Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
-- `not_found` — The resource does not exist or belongs to another store.
-- `publish_requires_file` — Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.
-- `publish_requires_image` — Attach at least one image first: PATCH /api/v1/products/{id} with an `images` array (each item { url, altText? }). Then publish.
-- `publish_requires_category` — Set a category first: PATCH /api/v1/products/{id} with a `categoryId` from GET /api/categories. A listing with no category never appears on a category page and reaches Google Shopping without one.
-- `category_not_allowed` — The categoryId names a system category (for example Getly Pages themes) that is not a marketplace shelf. Pick another category from GET /api/categories.
-- `moderation_locked` — This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products — do not retry automatically.
-- `not_publishable` — Fix every entry in the `reasons` array (each has a machine code and a detail), then call publish again.
-- `idempotency_conflict` — A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
-- `coupon_invalid` — The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
-- `not_purchasable` — The product cannot be sold through the Pay Widget — it must be an active, fixed-price product above $0 (not free or pay-what-you-want). Pick a different product or change its pricing.
-- `widget_disabled` — The store has turned the Pay Widget off (or anti-abuse auto-disabled it). The seller re-enables it at /dashboard/pay-widget.
-- `widget_not_approved` — This store has not been approved for the Pay Widget yet. The seller can request access at /dashboard/pay-widget; approval is a manual review. Distinct from rate_limited on purpose — nothing here clears itself by waiting.
-- `origin_not_allowed` — The request's Origin is not in the store's domain allowlist. Add the embedding site's domain at /dashboard/pay-widget, or embed only on allowed domains.
-- `challenge_required` — A Cloudflare Turnstile challenge is required. Render the widget with the returned challengeSiteKey and retry with the token — the pay.js embed handles this automatically.
-- `payment_method_unavailable` — The payment rail you asked for (card, paypal or crypto) is not live right now. errorDetail.paymentMethods lists the rails that are — retry with one of them.
-- `already_completed` — This checkout link has already been paid. Mint a new checkout link for another purchase.
-- `high_discount_ack_required` — Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.
-- `quota_exceeded` — Daily creation cap reached for this API key (products 100/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
-- `expired` — The resource has expired. Create a fresh one.
-- `license_invalid` — The license key does not exist or was deactivated.
-- `key_not_available` — Only an unsold (available) key can be removed. An issued key is the record of a sale and stays; a removed key is already gone. Re-read GET /api/v1/products/{id}/keys — do not retry.
-- `license_expired` — The access period this key was sold for has ended; the buyer can start a new period from the product page.
-- `activation_limit_reached` — All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
-- `billing_not_approved` — Getly Billing is granted by application: the seller applies at /dashboard/billing with the website the SaaS runs on and a description of what is sold, and a human reviews it. Reads keep working; creating plans and checkouts waits for approval. Nothing here clears itself by waiting or retrying.
-- `plan_exists` — A billing plan with this externalId already exists in your store. Update that plan, or send a different externalId.
-- `plan_inactive` — This billing plan is inactive. Activate it (PATCH isActive true) or create another plan before minting a checkout.
-- `subscription_not_cancellable` — The subscription has already ended, so there is nothing to cancel.
-- `payout_route_retired` — Seller payouts are stablecoin-only: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron (minimum $15), on the 1st and 15th. The seller saves the wallet at https://www.getly.store/dashboard/settings?tab=payments — that step cannot be done through the API. Stripe Connect onboarding is no longer offered; retrying will not change this.
-- `unknown_endpoint` — No such endpoint. The full list is at https://www.getly.store/developers/docs (machine-readable: https://www.getly.store/llms-api.txt and https://www.getly.store/openapi.yaml). Images upload through POST /api/v1/uploads/images/presign and downloadable files through POST /api/v1/products/{id}/files/presign — there is no /api/v1/media, /api/v1/files or bare /api/v1/uploads.
-- `internal_error` — Unexpected server error — safe to retry with the same Idempotency-Key.
+- `unauthorized` - Send your API key as `Authorization: Bearer <key>`. Create one at https://www.getly.store/dashboard/developer/keys - read it from an environment variable, never hardcode it.
+- `insufficient_scope` - Your API key is missing a required scope. Create a key with the needed scope at https://www.getly.store/dashboard/developer/keys and update your environment variable.
+- `rate_limited` - Wait for the number of seconds in the Retry-After header, then retry. Throttle proactively when X-RateLimit-Remaining gets low.
+- `validation_failed` - Fix the field named in `param` and retry the same request (re-send your Idempotency-Key).
+- `not_found` - The resource does not exist or belongs to another store.
+- `publish_requires_file` - Attach at least one downloadable file first: POST /api/v1/products/{id}/files/presign → PUT the bytes → POST /api/v1/products/{id}/files. Then publish.
+- `publish_requires_image` - Attach at least one image first: PATCH /api/v1/products/{id} with an `images` array (each item { url, altText? }). Then publish.
+- `publish_requires_category` - Set a category first: PATCH /api/v1/products/{id} with a `categoryId` from GET /api/categories. A listing with no category never appears on a category page and reaches Google Shopping without one.
+- `category_not_allowed` - The categoryId names a system category (for example Getly Pages themes) that is not a marketplace shelf. Pick another category from GET /api/categories.
+- `moderation_locked` - This product is awaiting (or was rejected in) moderation and cannot be self-published. Tell the user to check /dashboard/products - do not retry automatically.
+- `not_publishable` - Fix every entry in the `reasons` array (each has a machine code and a detail), then call publish again.
+- `idempotency_conflict` - A request with this Idempotency-Key is still processing. Wait 2-5 seconds and retry with the SAME key to get its result.
+- `coupon_invalid` - The coupon code does not exist, is inactive, is exhausted, or belongs to another store. List valid codes with GET /api/v1/coupons.
+- `not_purchasable` - The product cannot be sold through the Pay Widget - it must be an active, fixed-price product above $0 (not free or pay-what-you-want). Pick a different product or change its pricing.
+- `widget_disabled` - The store has turned the Pay Widget off (or anti-abuse auto-disabled it). The seller re-enables it at /dashboard/pay-widget.
+- `widget_not_approved` - This store has not been approved for the Pay Widget yet. The seller can request access at /dashboard/pay-widget; approval is a manual review. Distinct from rate_limited on purpose - nothing here clears itself by waiting.
+- `origin_not_allowed` - The request's Origin is not in the store's domain allowlist. Add the embedding site's domain at /dashboard/pay-widget, or embed only on allowed domains.
+- `challenge_required` - A Cloudflare Turnstile challenge is required. Render the widget with the returned challengeSiteKey and retry with the token - the pay.js embed handles this automatically.
+- `payment_method_unavailable` - The payment rail you asked for (card or crypto) is not live right now. errorDetail.paymentMethods lists the rails that are - retry with one of them.
+- `already_completed` - This checkout link has already been paid. Mint a new checkout link for another purchase.
+- `high_discount_ack_required` - Discounts of 90% or more (or unlimited-use coupons) require `acknowledgeHighDiscount: true` in the body. Confirm the discount with the user before adding it.
+- `quota_exceeded` - Daily creation cap reached for this API key (products 100/day, posts 5/day, coupons 30/day). Retry after the UTC midnight reset, or ask the user to contact support for a higher limit.
+- `expired` - The resource has expired. Create a fresh one.
+- `license_invalid` - The license key does not exist or was deactivated.
+- `key_not_available` - Only an unsold (available) key can be removed. An issued key is the record of a sale and stays; a removed key is already gone. Re-read GET /api/v1/products/{id}/keys - do not retry.
+- `license_expired` - The access period this key was sold for has ended; the buyer can start a new period from the product page.
+- `activation_limit_reached` - All activation seats are used. Deactivate an old device via POST /api/v1/licenses/deactivate or ask the buyer to upgrade.
+- `activation_conflict` - Another device activated this key at the same moment. Seats may still be free: retry the same request once.
+- `quality_below_threshold` - The listing quality score is under 70 of 100 (since 2026-10-30). The message gives the score and what to add: a description that says exactly what the buyer gets, who it is for and how it is used, 4+ images, a short description of 40+ characters, 3+ tags, a licence. PATCH those, then publish again.
+- `billing_not_approved` - Getly Billing is granted by application: the seller applies at /dashboard/billing with the website the SaaS runs on and a description of what is sold, and a human reviews it. Reads keep working; creating plans and checkouts waits for approval. Nothing here clears itself by waiting or retrying.
+- `plan_exists` - A billing plan with this externalId already exists in your store. Update that plan, or send a different externalId.
+- `plan_inactive` - This billing plan is inactive. Activate it (PATCH isActive true) or create another plan before minting a checkout.
+- `subscription_not_cancellable` - The subscription has already ended, so there is nothing to cancel.
+- `payout_route_retired` - Seller payouts are stablecoin-only: USDT/USDC on BNB Smart Chain (minimum $5), on the 1st and 15th; Tron payouts ended after the 15 November 2026 run. The seller saves the wallet at https://www.getly.store/dashboard/settings?tab=payments - that step cannot be done through the API. Stripe Connect onboarding is no longer offered; retrying will not change this.
+- `unknown_endpoint` - No such endpoint. The full list is at https://www.getly.store/developers/docs (machine-readable: https://www.getly.store/llms-api.txt and https://www.getly.store/openapi.yaml). Images upload through POST /api/v1/uploads/images/presign and downloadable files through POST /api/v1/products/{id}/files/presign - there is no /api/v1/media, /api/v1/files or bare /api/v1/uploads.
+- `internal_error` - Unexpected server error - safe to retry with the same Idempotency-Key.
 
 ## Webhooks
 
@@ -141,7 +141,7 @@ buyer paid with; a guest's checkout email counts. Deliver your own license
 keys here), `items[]` (`orderItemId`, `productId`, `price`, `sellerAmount`,
 `isGift`, `licenseKey`) and `total`. `licenseKey` is the key issued for
 that item (Getly-generated or from your key pool), or null when the product
-has no keys or the pool was empty — the buyer then gets the key by email as
+has no keys or the pool was empty - the buyer then gets the key by email as
 soon as you add more. Amounts are integer cents and cover your store's
 items only. `checkoutLinkId`, `reference` and `metadata` are added when the
 sale came from a checkout link. For an item with `isGift: true`, send its key
@@ -182,33 +182,33 @@ Events: `sale.completed`, `product.created`, `product.updated`, `review.created`
 
 ## API areas
 
-- **Products** — Seller product catalog (create, publish, files, your own license-key pool).
-- **Posts** — Creator blog posts (markdown source of truth).
-- **Coupons** — Store discount codes.
-- **Checkout Links** — Instant pay links; the payment session is created only when the buyer opens the link.
-- **Billing** — Getly Billing — recurring plans for the seller's OWN product (a SaaS, community or tool hosted on your site). Scopes read:billing / write:billing. Not a marketplace listing: the plan never appears in the catalogue and the subscriber lands back on your site. Writes require an approved application (the seller applies at /dashboard/billing with a public website and a description of what is sold; until approval every write answers 403 billing_not_approved, reads keep working). The take is the own-traffic rate (10%). The hosted page offers the rails that are live: PayPal and USDT/USDC today, where one payment buys ONE period, the subscriber is reminded seven days before the end and an unpaid period closes with billing.subscription.expired; a card subscription (when the card rail is live) renews by itself. Subscribers cancel at https://www.getly.store/subscriptions and keep access to the end of the paid period. Every billing.* webhook carries externalCustomerRef. Landing: https://www.getly.store/sell/billing
-- **Licenses** — License keys — public validate/activate/deactivate + seller list.
-- **Uploads** — Presigned direct-to-storage uploads.
-- **Webhook Endpoints** — Webhook endpoint management.
-- **Store** — Store profile and creation.
-- **Orders** — Read-only orders of the key's store.
-- **Analytics** — Sales analytics and money snapshot.
-- **Public** — No-auth endpoints (storefront widget, license checks, /go redirect).
+- **Products** - Seller product catalog (create, publish, files, your own license-key pool).
+- **Posts** - Creator blog posts (markdown source of truth).
+- **Coupons** - Store discount codes.
+- **Checkout Links** - Instant pay links; the payment session is created only when the buyer opens the link.
+- **Billing** - Getly Billing - recurring plans for the seller's OWN product (a SaaS, community or tool hosted on your site). Scopes read:billing / write:billing. Not a marketplace listing: the plan never appears in the catalogue and the subscriber lands back on your site. Writes require an approved application (the seller applies at /dashboard/billing with a public website and a description of what is sold; until approval every write answers 403 billing_not_approved, reads keep working). The take is the own-traffic rate (10%). The hosted page offers the rails that are live: card or USDT/USDC; with USDT/USDC one payment buys ONE period, the subscriber is reminded seven days before the end and an unpaid period closes with billing.subscription.expired; a card subscription renews by itself. Subscribers cancel at https://www.getly.store/subscriptions and keep access to the end of the paid period. Every billing.* webhook carries externalCustomerRef. Landing: https://www.getly.store/sell/billing
+- **Licenses** - License keys - public validate/activate/deactivate + seller list.
+- **Uploads** - Presigned direct-to-storage uploads.
+- **Webhook Endpoints** - Webhook endpoint management.
+- **Store** - Store profile and creation.
+- **Orders** - Read-only orders of the key's store.
+- **Analytics** - Sales analytics and money snapshot.
+- **Public** - No-auth endpoints (storefront widget, license checks, /go redirect).
 
 ## Endpoints
 
-### GET /api/v1/products — List products of your store (cursor pagination)
+### GET /api/v1/products - List products of your store (cursor pagination)
 
 operationId: `listProducts` · scope `read:products`
 
 Ordered createdAt DESC. Filter by status (default active), category id, or a name search.
 
 Parameters:
-- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
-- `limit` (query) — Page size, 1-100 (default 20).
-- `status` (query) — One of active, draft, pending_review, archived. Default active.
-- `category` (query) — Category id (uuid).
-- `search` (query) — Case-insensitive product-name substring search.
+- `cursor` (query) - Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" - treat as opaque).
+- `limit` (query) - Page size, 1-100 (default 20).
+- `status` (query) - One of active, draft, pending_review, archived. Default active.
+- `category` (query) - Category id (uuid).
+- `search` (query) - Case-insensitive product-name substring search.
 
 Response example (HTTP 200):
 
@@ -247,44 +247,54 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
 
-### POST /api/v1/products — Create a product
+### POST /api/v1/products - Create a product
 
 operationId: `createProduct` · scope `write:products`
 
 Accepts priceCents (preferred, integer minor units) or the deprecated
 dollar `price`. A product cannot be created directly as `active`
 without at least one downloadable file, at least one image and a
-`categoryId` — create a draft, attach what is missing, then publish.
+`categoryId` - create a draft, attach what is missing, then publish.
 `categoryId` must be a UUID from GET /api/categories; an unknown or
 malformed value is a 400, and a system category answers
-category_not_allowed. Stores with 0 completed sales get `pending_review`
-instead of `active` (first-sale trust gate). Daily cap 100 products/key.
+category_not_allowed. Since 2026-09-28 every new listing asking for
+`active` gets `pending_review` (premoderation for all stores); it goes live
+after review by the Getly team, usually within a few hours. Daily cap 100 products/key.
 licenseType (personal / commercial / extended / cc0 / custom) states what
-the buyer may do with the file — shown next to the buy button, in the
+the buyer may do with the file - shown next to the buy button, in the
 product FAQ and in the page's structured data. Optional: publishing does
 not require it, but a listing without one answers the buyer's first
 question with nothing.
+Languages (since 2026-11-13): name and description are written in English
+(not_english otherwise). Getly translates the listing into ru, de, es, fr
+and uk automatically. To use your own text for a language send
+translations: { "ru": { "name": "...", "shortDescription": "...",
+"description": "<p>...</p>" } } on create or PATCH; "ru": null hands the
+language back to automatic translation. A language you write is never
+overwritten automatically; the text must be in that language (400
+translation_wrong_language otherwise). sellerTranslations in the product
+lists the languages you wrote.
 Seller key pool: keyPoolEnabled true hands each buyer the next key from
 YOUR list instead of a Getly-generated key (mutually exclusive with
-licenseKeysEnabled — both true is a 400). keyPoolLowThreshold (integer
+licenseKeysEnabled - both true is a 400). keyPoolLowThreshold (integer
 1–1000, default 5) sets when you get the "running low" email. Add keys
 with POST /api/v1/products/{id}/keys once the product exists.
 demoUrl (optional https URL) puts a "Try it free" button next to the
 price: a file you uploaded to Getly (executables refused), or a link to
 the trial download on your own site. A non-https value or an uploaded
 executable is a 400 with param demoUrl.
-Timed access: send accessMode "timed" and accessTerms[] (durationDays 1–3650, unique; priceCents ≥ 0; optional compareAtPriceCents above priceCents; optional label) to sell access for a period on a one-time payment — the buyer picks a term, access ends on a date, and your endpoint receives access.expiring (7 days before) and access.expired webhooks. The catalogue price becomes the cheapest active term. A timed product cannot be published without an active term. On PATCH, accessTerms replaces the table (rows with an id are updated, missing rows are retired, never deleted). Licence keys sold under a term stop validating when it ends (license_expired).
+Timed access: send accessMode "timed" and accessTerms[] (durationDays 1–3650, unique; priceCents ≥ 0; optional compareAtPriceCents above priceCents; optional label) to sell access for a period on a one-time payment - the buyer picks a term, access ends on a date, and your endpoint receives access.expiring (7 days before) and access.expired webhooks. The catalogue price becomes the cheapest active term. A timed product cannot be published without an active term. On PATCH, accessTerms replaces the table (rows with an id are updated, missing rows are retired, never deleted). Licence keys sold under a term stop validating when it ends (license_expired).
 Provenance is recorded as createdVia="api".
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
 ```json
 {
   "name": "Notion Startup OS",
-  "description": "A complete startup operating system for Notion — hiring, fundraising, OKRs.",
+  "description": "A complete startup operating system for Notion - hiring, fundraising, OKRs.",
   "shortDescription": "Run your startup from one Notion workspace.",
   "priceCents": 2900,
   "compareAtPriceCents": 4900,
@@ -355,12 +365,12 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `publish_requires_file`, `publish_requires_image`, `publish_requires_category`, `category_not_allowed`, `quota_exceeded`, `idempotency_conflict`, `rate_limited`.
 
-### GET /api/v1/products/{id} — Get a product (with images, files metadata, category, latest reviews)
+### GET /api/v1/products/{id} - Get a product (with images, files metadata, category, latest reviews)
 
 operationId: `getProduct` · scope `read:products`
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
+- `id` (path, required) - Product id (uuid).
 
 Response example (HTTP 200):
 
@@ -405,7 +415,7 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### PATCH /api/v1/products/{id} — Update a product
+### PATCH /api/v1/products/{id} - Update a product
 
 operationId: `updateProduct` · scope `write:products`
 
@@ -414,6 +424,10 @@ archived only), categoryId, tags, priceCents, compareAtPriceCents,
 licenseKeysEnabled, licenseActivationLimit, licenseType (enum or null to
 clear), keyPoolEnabled, keyPoolLowThreshold, demoUrl (https URL, or null
 to remove), images (full replacement).
+compareAtPriceCents (the crossed-out price) must be above the price and at
+most the lowest price of the last 30 days; a sale shows for up to 30 days,
+then the crossed-out price is cleared. On create it is not stored (a new
+listing cannot start on a sale) and the response carries compareAtIgnored.
 `keyPoolEnabled: true` sells YOUR keys (POST /api/v1/products/{id}/keys)
 and turns `licenseKeysEnabled` off in the same write; `licenseKeysEnabled:
 true` turns the pool off; both true in one request is a 400.
@@ -424,7 +438,7 @@ product in pending_review/rejected cannot be self-published
 and cannot be cleared. Providing `images` replaces the whole set.
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
+- `id` (path, required) - Product id (uuid).
 
 Request body example:
 
@@ -460,14 +474,14 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `publish_requires_file`, `publish_requires_image`, `publish_requires_category`, `category_not_allowed`, `moderation_locked`, `rate_limited`.
 
-### DELETE /api/v1/products/{id} — Archive a product (soft delete)
+### DELETE /api/v1/products/{id} - Archive a product (soft delete)
 
 operationId: `archiveProduct` · scope `write:products`
 
-Sets status to "archived". Not a hard delete — existing orders and downloads keep working. Archiving an already-archived product succeeds.
+Sets status to "archived". Not a hard delete - existing orders and downloads keep working. Archiving an already-archived product succeeds.
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
+- `id` (path, required) - Product id (uuid).
 
 Response example (HTTP 200):
 
@@ -484,21 +498,30 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### POST /api/v1/products/{id}/publish — Publish a product (one call, machine-readable blockers)
+### POST /api/v1/products/{id}/publish - Publish a product (one call, machine-readable blockers)
 
 operationId: `publishProduct` · scope `write:products`
 
 Flips the product to "active". On failure returns 422 with code
-not_publishable and a `reasons` array — each entry has a machine
-`code` (missing_file | missing_image | no_category |
+not_publishable and a `reasons` array - each entry has a machine
+`code` (missing_file | missing_image | no_category | not_english |
 description_too_short | name_too_long | publisher_check_failed |
-moderation_locked | already_active) and a `detail` explaining what to
-do. Stores with 0 completed sales get
-pending_review instead of active (first-sale trust gate).
+listing_rules | quality_below_threshold | moderation_locked | already_active) and a `detail` explaining what to
+do. listing_rules covers prohibited wording, a name under 5 characters,
+a delivery that is not the product (a file that promises later delivery,
+a messenger contact, a file-host link, a copy of the listing) and a name
+another of your live listings already uses. not_english (since 2026-11-13):
+the name or description is not in English; listings are written in English
+and Getly translates them. quality_below_threshold (since
+2026-10-30): the listing quality score is under 70 of 100; the detail gives the
+score and what to add (description that says what the buyer gets, 4+ images,
+a short description of 40+ characters, 3+ tags, a licence). Create and PATCH
+refuse with the same code. Since 2026-09-28 a publish lands
+in pending_review (premoderation for every store) and goes live after review.
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `id` (path, required) - Product id (uuid).
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Response example (HTTP 200):
 
@@ -519,14 +542,14 @@ Response example (HTTP 200):
 }
 ```
 
-Errors: `unauthorized`, `insufficient_scope`, `not_found`, `not_publishable`, `idempotency_conflict`, `rate_limited`.
+Errors: `unauthorized`, `insufficient_scope`, `not_found`, `not_publishable`, `quality_below_threshold`, `idempotency_conflict`, `rate_limited`.
 
-### GET /api/v1/products/{id}/files — List downloadable files attached to a product
+### GET /api/v1/products/{id}/files - List downloadable files attached to a product
 
 operationId: `listProductFiles` · scope `read:products`
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
+- `id` (path, required) - Product id (uuid).
 
 Response example (HTTP 200):
 
@@ -550,19 +573,19 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### POST /api/v1/products/{id}/files — Attach a downloadable file to a product
+### POST /api/v1/products/{id}/files - Attach a downloadable file to a product
 
 operationId: `attachProductFile` · scope `write:products`
 
-Two modes. (A) multipart/form-data with a `file` part — uploaded
+Two modes. (A) multipart/form-data with a `file` part - uploaded
 server-side (max 2GB, dangerous extensions blocked). (B) application/json
-`{ fileUrl, fileName, fileSize, fileType?, versionNotes? }` — attaches an
+`{ fileUrl, fileName, fileSize, fileType?, versionNotes? }` - attaches an
 object previously uploaded through the presign flow; fileUrl must be a
 URL this API issued for YOUR store (files/<yourUserId>/ prefix).
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `id` (path, required) - Product id (uuid).
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -596,21 +619,21 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
 
-### POST /api/v1/products/{id}/files/presign — Get a presigned upload URL for a large product file
+### POST /api/v1/products/{id}/files/presign - Get a presigned upload URL for a large product file
 
 operationId: `presignProductFile` · scope `write:products`
 
 3-step upload flow for files up to 2GB:
 1. POST here with { fileName, fileSize, fileType? } → { uploadUrl, fileUrl, key }.
 2. PUT the raw bytes to `uploadUrl` (expires in 1h). Content-Length is
-   part of the signature — you must send exactly `fileSize` bytes.
+   part of the signature - you must send exactly `fileSize` bytes.
 3. POST /api/v1/products/{id}/files (JSON mode) with { fileUrl, fileName,
    fileSize, fileType } to attach the uploaded object.
 Objects never attached are garbage-collected after ~24h.
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `id` (path, required) - Product id (uuid).
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -639,21 +662,21 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
 
-### GET /api/v1/products/{id}/keys — Your key pool — counters and the masked key list
+### GET /api/v1/products/{id}/keys - Your key pool - counters and the masked key list
 
 operationId: `listProductKeys` · scope `read:products`
 
 For a product with keyPoolEnabled, each sale hands the buyer the next
 unsold key in the order you added them. Keys are shown masked
 (`ABCD…WXYZ`); the plaintext is never returned. `counts.waiting` is the
-number of paid orders waiting because the pool ran out — they get their
+number of paid orders waiting because the pool ran out - they get their
 keys the moment you add more. `refunded: true` on an issued key means
 that sale was refunded; revoke the key in your own system.
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
-- `limit` (query) — 
-- `offset` (query) — 
+- `id` (path, required) - Product id (uuid).
+- `limit` (query) - 
+- `offset` (query) - 
 
 Response example (HTTP 200):
 
@@ -687,19 +710,19 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
 
-### POST /api/v1/products/{id}/keys — Add keys to the pool
+### POST /api/v1/products/{id}/keys - Add keys to the pool
 
 operationId: `addProductKeys` · scope `write:products`
 
-Body `{ keys: string[] }` — up to 5000 per request, each at most 500
+Body `{ keys: string[] }` - up to 5000 per request, each at most 500
 characters. Keys are trimmed; blanks are dropped; repeats in the body
 (`duplicatesInInput`) and keys already in the pool (`duplicates`) are
 counted, not added. Keys are sold in the order sent. Buyers waiting for
 a key get one immediately (`filled`).
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `id` (path, required) - Product id (uuid).
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -730,16 +753,16 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
 
-### DELETE /api/v1/products/{id}/keys/{keyId} — Remove an unsold key
+### DELETE /api/v1/products/{id}/keys/{keyId} - Remove an unsold key
 
 operationId: `removeProductKey` · scope `write:products`
 
 Only an available (unsold) key can be removed. An issued key is the
-record of a sale and stays — 409 `key_not_available`.
+record of a sale and stays - 409 `key_not_available`.
 
 Parameters:
-- `id` (path, required) — Product id (uuid).
-- `keyId` (path, required) — Key id from GET /api/v1/products/{id}/keys.
+- `id` (path, required) - Product id (uuid).
+- `keyId` (path, required) - Key id from GET /api/v1/products/{id}/keys.
 
 Response example (HTTP 200):
 
@@ -755,20 +778,23 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `key_not_available`, `rate_limited`.
 
-### POST /api/v1/uploads/images/presign — Get a presigned upload URL for an image (product images / post covers)
+### POST /api/v1/uploads/images/presign - Get a presigned upload URL for an image (product images / post covers)
 
 operationId: `presignImageUpload` · scope `write:products`
 
 Same 3-step flow as file presign, image-scoped (max 10MB; fileType
-must be image/png, image/jpeg, image/webp, image/gif or image/avif —
+must be image/png, image/jpeg, image/webp, image/gif or image/avif -
 `contentType` is accepted as a legacy alias):
-1. POST here { fileSize, fileType } → { uploadUrl, publicUrl, expiresIn }.
-2. PUT the raw bytes to `uploadUrl` (Content-Length must equal fileSize).
+1. POST here { fileSize, fileType } → { uploadUrl, uploadHeaders, publicUrl, expiresIn }.
+2. PUT the raw bytes to `uploadUrl` with the headers in `uploadHeaders`
+   (Content-Type equal to the declared fileType; Content-Length equal to
+   fileSize, which is part of the signature). Send the Content-Type: a
+   wrong one is corrected when the image is attached, but send it anyway.
 3. Reference `publicUrl` in a product `images[]` entry or a post
    `coverImageUrl`. Never-attached objects are garbage-collected after ~24h.
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -787,6 +813,9 @@ Response example (HTTP 200):
   "success": true,
   "data": {
     "uploadUrl": "https://accountid.r2.cloudflarestorage.com/bucket/images/api/store-uuid/abc123.webp?X-Amz-Signature=...",
+    "uploadHeaders": {
+      "Content-Type": "image/webp"
+    },
     "publicUrl": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
     "expiresIn": 3600
   }
@@ -795,14 +824,14 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
 
-### GET /api/v1/posts — List your store's blog posts (cursor pagination)
+### GET /api/v1/posts - List your store's blog posts (cursor pagination)
 
 operationId: `listPosts` · scope `read:posts`
 
 Parameters:
-- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
-- `limit` (query) — Page size, 1-100 (default 20).
-- `status` (query) — Filter by status — draft or published.
+- `cursor` (query) - Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" - treat as opaque).
+- `limit` (query) - Page size, 1-100 (default 20).
+- `status` (query) - Filter by status - draft or published.
 
 Response example (HTTP 200):
 
@@ -835,7 +864,7 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
 
-### POST /api/v1/posts — Create a blog post (markdown)
+### POST /api/v1/posts - Create a blog post (markdown)
 
 operationId: `createPost` · scope `write:posts`
 
@@ -844,9 +873,10 @@ shortcode renders as a product card with a buy button on the public post
 page. Slug auto-derives from the title (override with `slug`); per-store
 collisions get a -2/-3 suffix. Daily cap 5 posts/key (quota_exceeded).
 Cover images hosted outside Getly storage are accepted with a warning.
+crosspostMuhamor (boolean, default false) also publishes the post on Muhamor, our partner community for creators: the copy links back to the Getly page as canonical, a subscribers-only post goes as a teaser only, and turning it off or unpublishing hides the copy.
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -883,12 +913,12 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `quota_exceeded`, `idempotency_conflict`, `rate_limited`.
 
-### GET /api/v1/posts/{id} — Get a blog post
+### GET /api/v1/posts/{id} - Get a blog post
 
 operationId: `getPost` · scope `read:posts`
 
 Parameters:
-- `id` (path, required) — Post id (uuid).
+- `id` (path, required) - Post id (uuid).
 
 Response example (HTTP 200):
 
@@ -909,14 +939,14 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### PATCH /api/v1/posts/{id} — Update a blog post
+### PATCH /api/v1/posts/{id} - Update a blog post
 
 operationId: `updatePost` · scope `write:posts`
 
-Updatable — title, contentMarkdown, status (draft/published; publishedAt is set on first publish and kept stable), excerpt (null clears), coverImageUrl (null clears), slug.
+Updatable - title, contentMarkdown, status (draft/published; publishedAt is set on first publish and kept stable), excerpt (null clears), coverImageUrl (null clears), slug, crosspostMuhamor (boolean; false or unpublish hides the Muhamor copy).
 
 Parameters:
-- `id` (path, required) — Post id (uuid).
+- `id` (path, required) - Post id (uuid).
 
 Request body example:
 
@@ -944,12 +974,12 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
 
-### DELETE /api/v1/posts/{id} — Delete a blog post (hard delete)
+### DELETE /api/v1/posts/{id} - Delete a blog post (hard delete)
 
 operationId: `deletePost` · scope `write:posts`
 
 Parameters:
-- `id` (path, required) — Post id (uuid).
+- `id` (path, required) - Post id (uuid).
 
 Response example (HTTP 200):
 
@@ -965,14 +995,14 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### GET /api/v1/coupons — List your store's coupons (cursor pagination)
+### GET /api/v1/coupons - List your store's coupons (cursor pagination)
 
 operationId: `listCoupons` · scope `read:coupons`
 
 Parameters:
-- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
-- `limit` (query) — Page size, 1-100 (default 20).
-- `active` (query) — Filter by isActive — "true" or "false".
+- `cursor` (query) - Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" - treat as opaque).
+- `limit` (query) - Page size, 1-100 (default 20).
+- `active` (query) - Filter by isActive - "true" or "false".
 
 Response example (HTTP 200):
 
@@ -1003,18 +1033,18 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
 
-### POST /api/v1/coupons — Create a coupon
+### POST /api/v1/coupons - Create a coupon
 
 operationId: `createCoupon` · scope `write:coupons`
 
-code — 3-50 chars, A-Z 0-9 dashes, unique per store (uppercased).
+code - 3-50 chars, A-Z 0-9 dashes, unique per store (uppercased).
 type "percentage" (value 1-100) or "fixed" (value/valueCents in cents).
 Percentage discounts of 90%+ require acknowledgeHighDiscount:true
 (error high_discount_ack_required). Daily cap 30 coupons/key.
 code, type and value are immutable after creation.
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -1050,14 +1080,14 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `high_discount_ack_required`, `quota_exceeded`, `idempotency_conflict`, `rate_limited`.
 
-### PATCH /api/v1/coupons/{id} — Update a coupon (isActive, expiresAt, maxUses only)
+### PATCH /api/v1/coupons/{id} - Update a coupon (isActive, expiresAt, maxUses only)
 
 operationId: `updateCoupon` · scope `write:coupons`
 
-code, type and value are immutable — mutating a live discount silently changes already-shared codes. Create a new coupon and deactivate the old one instead.
+code, type and value are immutable - mutating a live discount silently changes already-shared codes. Create a new coupon and deactivate the old one instead.
 
 Parameters:
-- `id` (path, required) — Coupon id (uuid).
+- `id` (path, required) - Coupon id (uuid).
 
 Request body example:
 
@@ -1084,14 +1114,14 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
 
-### DELETE /api/v1/coupons/{id} — Delete a never-used coupon
+### DELETE /api/v1/coupons/{id} - Delete a never-used coupon
 
 operationId: `deleteCoupon` · scope `write:coupons`
 
-Coupons with usedCount > 0 cannot be deleted (orders reference them) — returns 409; deactivate via PATCH isActive:false instead.
+Coupons with usedCount > 0 cannot be deleted (orders reference them) - returns 409; deactivate via PATCH isActive:false instead.
 
 Parameters:
-- `id` (path, required) — Coupon id (uuid).
+- `id` (path, required) - Coupon id (uuid).
 
 Response example (HTTP 200):
 
@@ -1107,12 +1137,12 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
 
-### GET /api/v1/billing/plans — List your billing plans
+### GET /api/v1/billing/plans - List your billing plans
 
 operationId: `listBillingPlans` · scope `read:billing`
 
 Parameters:
-- `active` (query) — Filter — true or false.
+- `active` (query) - Filter - true or false.
 
 Response example (HTTP 200):
 
@@ -1141,16 +1171,16 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
 
-### POST /api/v1/billing/plans — Create a billing plan
+### POST /api/v1/billing/plans - Create a billing plan
 
 operationId: `createBillingPlan` · scope `write:billing`
 
-A plan is an amount in integer cents (minimum 50) charged every
+A plan is an amount in integer cents (minimum 200, i.e. $2.00) charged every
 interval. intervalUnit is day, week, month or year; intervalCount
-1-52 (default 1) — so "every 3 months" is month/3 and "every 2 weeks"
+1-52 (default 1) - so "every 3 months" is month/3 and "every 2 weeks"
 is week/2. Only usd today. externalId is your own plan id, echoed in
 webhooks. 409 plan_exists when a plan with the same externalId exists.
-Requires an approved Billing application — 403 billing_not_approved
+Requires an approved Billing application - 403 billing_not_approved
 otherwise (apply at /dashboard/billing).
 
 Request body example:
@@ -1191,18 +1221,18 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `billing_not_approved`, `validation_failed`, `plan_exists`, `rate_limited`.
 
-### GET /api/v1/billing/plans/{id} — Get a billing plan
+### GET /api/v1/billing/plans/{id} - Get a billing plan
 
 operationId: `getBillingPlan` · scope `read:billing`
 
 Parameters:
-- `id` (path, required) — 
+- `id` (path, required) - 
 
 Response (HTTP 200): The plan (same shape as the list item).
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### PATCH /api/v1/billing/plans/{id} — Update a billing plan
+### PATCH /api/v1/billing/plans/{id} - Update a billing plan
 
 operationId: `updateBillingPlan` · scope `write:billing`
 
@@ -1213,7 +1243,7 @@ isActive=false stops new checkouts and leaves existing subscriptions
 untouched.
 
 Parameters:
-- `id` (path, required) — 
+- `id` (path, required) - 
 
 Request body example:
 
@@ -1228,19 +1258,18 @@ Response (HTTP 200): The updated plan.
 
 Errors: `unauthorized`, `insufficient_scope`, `billing_not_approved`, `validation_failed`, `not_found`, `plan_exists`, `rate_limited`.
 
-### POST /api/v1/billing/checkout — Mint a hosted subscribe page for one customer
+### POST /api/v1/billing/checkout - Mint a hosted subscribe page for one customer
 
 operationId: `createBillingCheckout` · scope `write:billing`
 
 Returns a URL on getly.store where the customer signs in (or creates
-a Getly account), sees the plan and pays with PayPal or USDT/USDC
-(or a card, while the card rail is live). The link
+a Getly account), sees the plan and pays with USDT/USDC (or a card, once the card rail is back). The link
 is signed and valid for 24 hours. customerRef (≤255 chars) is YOUR
 id for this customer and is echoed on every billing.* webhook and on
 the subscription object as externalCustomerRef. successUrl and
 cancelUrl must be https URLs on your site. metadata: up to 2 KB of
 string values, echoed on webhooks. The price is re-read from the plan
-when the session is created — nothing on the page is trusted for money.
+when the session is created - nothing on the page is trusted for money.
 
 Request body example:
 
@@ -1270,16 +1299,16 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `billing_not_approved`, `validation_failed`, `not_found`, `plan_inactive`, `rate_limited`.
 
-### GET /api/v1/billing/subscriptions — List subscriptions to your plans (limit/offset)
+### GET /api/v1/billing/subscriptions - List subscriptions to your plans (limit/offset)
 
 operationId: `listBillingSubscriptions` · scope `read:billing`
 
 Parameters:
-- `status` (query) — 
-- `customerRef` (query) — Your own customer id, as sent at checkout.
-- `planId` (query) — 
-- `limit` (query) — 
-- `offset` (query) — 
+- `status` (query) - 
+- `customerRef` (query) - Your own customer id, as sent at checkout.
+- `planId` (query) - 
+- `limit` (query) - 
+- `offset` (query) - 
 
 Response example (HTTP 200):
 
@@ -1304,7 +1333,7 @@ Response example (HTTP 200):
       },
       "customerRef": "user_8841",
       "status": "active",
-      "paymentMethod": "paypal",
+      "paymentMethod": "crypto",
       "currentPeriodStart": "2026-09-08T09:14:00.000Z",
       "currentPeriodEnd": "2026-10-08T09:14:00.000Z",
       "cancelAtPeriodEnd": false,
@@ -1326,49 +1355,47 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
 
-### GET /api/v1/billing/subscriptions/{id} — Get one subscription — the status check before granting access
+### GET /api/v1/billing/subscriptions/{id} - Get one subscription - the status check before granting access
 
 operationId: `getBillingSubscription` · scope `read:billing`
 
 status is active, past_due (a card renewal failed; the card
 processor retries and the subscriber has been told), canceled (ended
-after a cancellation) or expired (a PayPal or crypto period ran out
-unpaid). paymentMethod is stripe (card), paypal or crypto. Treat active
+after a cancellation) or expired (a crypto or legacy PayPal period ran out unpaid). paymentMethod is stripe (card), paypal or crypto. Treat active
 and past_due as "still entitled" until currentPeriodEnd.
 
 Parameters:
-- `id` (path, required) — 
+- `id` (path, required) - 
 
 Response (HTTP 200): The subscription (same shape as the list item).
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### POST /api/v1/billing/subscriptions/{id}/cancel — Stop renewal at the end of the paid period
+### POST /api/v1/billing/subscriptions/{id}/cancel - Stop renewal at the end of the paid period
 
 operationId: `cancelBillingSubscription` · scope `write:billing`
 
 Never an immediate cut-off: the subscriber keeps what they paid for.
 A card subscription is set to cancel at period end and your endpoint
-receives billing.subscription.canceled when it ends; a PayPal or crypto
-subscription simply is not reminded to pay again and ends with
+receives billing.subscription.canceled when it ends; a crypto or legacy PayPal subscription simply is not reminded to pay again and ends with
 billing.subscription.expired. 409 subscription_not_cancellable when
 it already ended. Idempotent: a second call returns the same object.
 
 Parameters:
-- `id` (path, required) — 
+- `id` (path, required) - 
 
 Response (HTTP 200): The subscription with cancelAtPeriodEnd=true.
 
 Errors: `unauthorized`, `insufficient_scope`, `billing_not_approved`, `not_found`, `subscription_not_cancellable`, `rate_limited`.
 
-### GET /api/v1/checkout-links — List your checkout links (cursor pagination)
+### GET /api/v1/checkout-links - List your checkout links (cursor pagination)
 
 operationId: `listCheckoutLinks` · scope `checkout:create`
 
 Parameters:
-- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
-- `limit` (query) — Page size, 1-100 (default 20).
-- `status` (query) — Filter — open, completed or expired.
+- `cursor` (query) - Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" - treat as opaque).
+- `limit` (query) - Page size, 1-100 (default 20).
+- `status` (query) - Filter - open, completed or expired.
 
 Response example (HTTP 200):
 
@@ -1400,7 +1427,7 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
 
-### POST /api/v1/checkout-links — Create an instant checkout link for one product
+### POST /api/v1/checkout-links - Create an instant checkout link for one product
 
 operationId: `createCheckoutLink` · scope `checkout:create`
 
@@ -1412,11 +1439,10 @@ the sale.completed / checkout_link.completed webhooks. Naturally
 idempotent: an open, unexpired link with the same product + coupon +
 reference is returned (200) instead of minting a new one (201).
 Default expiry 7 days (expiresInHours 1-720). The payment session
-(PayPal order or crypto invoice, or a card session while the card rail
-is live) is created only when the buyer opens the link, never here.
+(a crypto invoice, or a card session while the card rail is live) is created only when the buyer opens the link, never here.
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -1460,14 +1486,14 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `not_found`, `coupon_invalid`, `not_publishable`, `idempotency_conflict`, `rate_limited`.
 
-### GET /api/v1/checkout-links/{id} — Poll a checkout link's status
+### GET /api/v1/checkout-links/{id} - Poll a checkout link's status
 
 operationId: `getCheckoutLink` · scope `checkout:create`
 
-For bots without a public webhook URL — status is open, completed (then orderId is set) or expired.
+For bots without a public webhook URL - status is open, completed (then orderId is set) or expired.
 
 Parameters:
-- `id` (path, required) — Checkout link id (uuid).
+- `id` (path, required) - Checkout link id (uuid).
 
 Response example (HTTP 200):
 
@@ -1492,57 +1518,56 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `not_found`, `rate_limited`.
 
-### GET /go/{linkId} — Public checkout-link redirect (buyer-facing)
+### GET /go/{linkId} - Public checkout-link redirect (buyer-facing)
 
 operationId: `redirectCheckoutLink` · Public (no auth required)
 
-NO auth — this is the URL you hand to buyers. Validates the link at
+NO auth - this is the URL you hand to buyers. Validates the link at
 click time (product still active, seller not suspended, coupon still
 valid) and sends the buyer into payment with the coupon auto-applied.
 While card checkout is paused it 302-redirects to
 https://www.getly.store/pay/link/{linkId}, where the buyer enters an
-email and pays with PayPal or USDT/USDC; with the card rail live it
+email and pays with USDT/USDC; with the card rail live it
 creates a card checkout session instead. Stale/expired/completed links
-redirect to the product page (full-price purchase stays possible) —
+redirect to the product page (full-price purchase stays possible) -
 never a dead end. Per-IP velocity limited.
 
 Parameters:
-- `linkId` (path, required) — Checkout link id (uuid) from createCheckoutLink.
+- `linkId` (path, required) - Checkout link id (uuid) from createCheckoutLink.
 
-Response (HTTP 302): Redirect to /pay/link/{linkId} (PayPal / crypto), to a card checkout while the card rail is live, or to the product page / homepage for stale links.
+Response (HTTP 302): Redirect to /pay/link/{linkId} (crypto), to a card checkout while the card rail is live, or to the product page / homepage for stale links.
 
-### POST /api/v1/public/checkout — Mint a Pay Widget checkout (buyer-facing, no auth)
+### POST /api/v1/public/checkout - Mint a Pay Widget checkout (buyer-facing, no auth)
 
 operationId: `createPublicCheckout` · Public (no auth required)
 
-NO auth — this is what the embeddable pay.js Buy button (and the
+NO auth - this is what the embeddable pay.js Buy button (and the
 /pay/link/{linkId} page behind a /go link) calls. Name the product with
 storeSlug + productSlug (a widget mint), or with the linkId of an
 API-minted checkout link (its coupon, affiliate code, reference and
-success URL are reused). `method` picks the rail — card, paypal or
-crypto — and must be one of the rails that are live right now (read
+success URL are reused). `method` picks the rail - card or
+crypto - and must be one of the rails that are live right now (read
 `paymentMethods` from GET /api/v1/public/stores/{slug}/products/{productSlug});
 a rail that is not live answers 409 payment_method_unavailable with the
 current `paymentMethods` in errorDetail. Omitted, the first live rail is
-used. PayPal and crypto need the buyer's `email` BEFORE the redirect
-(the receipt and download links go there). Card checkout is paused
-today. The response is a hosted payment `url` to open in a popup or the
+used. Crypto needs the buyer's `email` BEFORE the redirect
+(the receipt and download links go there). The response is a hosted payment `url` to open in a popup or the
 same tab (card inline mode returns clientSecret + publishableKey
-instead). The PRICE IS ALWAYS READ FROM THE PRODUCT ROW — any price the
+instead). The PRICE IS ALWAYS READ FROM THE PRODUCT ROW - any price the
 browser sends is ignored. Only active, fixed-price (> 0) products of a
 non-suspended seller are sellable; free / pay-what-you-want / unknown
 products return not_purchasable (or a leak-safe not_found). A widget
 mint needs a store approved for the Pay Widget (403
-widget_not_approved otherwise — request access at /dashboard/pay-widget)
+widget_not_approved otherwise - request access at /dashboard/pay-widget)
 and passes layered anti-abuse: per-IP / per-product / per-origin
 velocity limits, an optional origin allowlist, a per-store kill switch,
 a concurrent-open cap and (for untrusted stores) a Cloudflare Turnstile
 challenge. `check: true` runs every configuration check and stops
 before any payment (returns check ok with the live paymentMethods). You
-normally never call this directly — embed the widget from /pay-widget.
+normally never call this directly - embed the widget from /pay-widget.
 
 Parameters:
-- `Origin` (header) — The embedding site's origin. Enforced against the store's domain allowlist when the seller has set one.
+- `Origin` (header) - The embedding site's origin. Enforced against the store's domain allowlist when the seller has set one.
 
 Request body example:
 
@@ -1550,7 +1575,7 @@ Request body example:
 {
   "storeSlug": "acme-studio",
   "productSlug": "icon-pack-pro",
-  "method": "paypal",
+  "method": "crypto",
   "email": "buyer@example.com",
   "mode": "popup",
   "challengeToken": "turnstile-token-when-challenged"
@@ -1563,8 +1588,8 @@ Response example (HTTP 200):
 {
   "success": true,
   "data": {
-    "method": "paypal",
-    "url": "https://www.paypal.com/checkoutnow?token=5O190127TN364715T",
+    "method": "crypto",
+    "url": "https://nowpayments.io/payment/?iid=5091537712",
     "linkId": "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
     "priceCents": 2900,
     "currency": "USD"
@@ -1574,19 +1599,19 @@ Response example (HTTP 200):
 
 Errors: `validation_failed`, `not_found`, `not_purchasable`, `widget_not_approved`, `widget_disabled`, `origin_not_allowed`, `challenge_required`, `payment_method_unavailable`, `already_completed`, `expired`, `quota_exceeded`, `rate_limited`.
 
-### GET /api/v1/public/checkout/{linkId}/status — Poll a Pay Widget checkout's status (buyer-facing, no auth)
+### GET /api/v1/public/checkout/{linkId}/status - Poll a Pay Widget checkout's status (buyer-facing, no auth)
 
 operationId: `getPublicCheckoutStatus` · Public (no auth required)
 
 NO auth. The embed script polls this to know when to show the success
-state. Returns ONLY a status of open, completed or expired — never the
+state. Returns ONLY a status of open, completed or expired - never the
 order, amount or buyer, so it cannot be used as a conversion oracle.
 Scoped to widget-minted links only (anything else reads as not_found).
-Per-IP rate limited. Delivery is server-side — NEVER unlock content on
+Per-IP rate limited. Delivery is server-side - NEVER unlock content on
 this value; verify real sales via the sale.completed webhook.
 
 Parameters:
-- `linkId` (path, required) — The linkId returned by createPublicCheckout.
+- `linkId` (path, required) - The linkId returned by createPublicCheckout.
 
 Response example (HTTP 200):
 
@@ -1601,14 +1626,14 @@ Response example (HTTP 200):
 
 Errors: `not_found`, `rate_limited`.
 
-### GET /api/v1/licenses — List license keys issued for your products (cursor pagination)
+### GET /api/v1/licenses - List license keys issued for your products (cursor pagination)
 
 operationId: `listLicenses` · scope `read:licenses`
 
 Parameters:
-- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
-- `limit` (query) — Page size, 1-100 (default 20).
-- `productId` (query) — Filter by one of your products (uuid).
+- `cursor` (query) - Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" - treat as opaque).
+- `limit` (query) - Page size, 1-100 (default 20).
+- `productId` (query) - Filter by one of your products (uuid).
 
 Response example (HTTP 200):
 
@@ -1641,7 +1666,7 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### POST /api/v1/licenses/validate — Validate a license key (PUBLIC, no auth)
+### POST /api/v1/licenses/validate - Validate a license key (PUBLIC, no auth)
 
 operationId: `validateLicense` · Public (no auth required)
 
@@ -1681,12 +1706,12 @@ Response example (HTTP 200):
 
 Errors: `validation_failed`, `rate_limited`.
 
-### POST /api/v1/licenses/activate — Activate a license on a device (PUBLIC, no auth)
+### POST /api/v1/licenses/activate - Activate a license on a device (PUBLIC, no auth)
 
 operationId: `activateLicense` · Public (no auth required)
 
 Claims an activation seat for a device/install. Idempotent per
-fingerprint — re-activating an already-active fingerprint succeeds
+fingerprint - re-activating an already-active fingerprint succeeds
 without consuming a seat. fingerprint is any stable device/install
 identifier (1-200 chars); label is an optional human name. Fires the
 license.activated webhook to the product's store. Rate-limited per IP.
@@ -1714,13 +1739,13 @@ Response example (HTTP 200):
 }
 ```
 
-Errors: `validation_failed`, `license_invalid`, `license_expired`, `activation_limit_reached`, `rate_limited`.
+Errors: `validation_failed`, `license_invalid`, `license_expired`, `activation_limit_reached`, `activation_conflict`, `rate_limited`.
 
-### POST /api/v1/licenses/deactivate — Deactivate a license on a device (PUBLIC, no auth)
+### POST /api/v1/licenses/deactivate - Deactivate a license on a device (PUBLIC, no auth)
 
 operationId: `deactivateLicense` · Public (no auth required)
 
-Releases an activation seat (device decommissioned / reinstall). Idempotent — deactivating a fingerprint that is not active succeeds as a no-op (wasActive false). Rate-limited per IP.
+Releases an activation seat (device decommissioned / reinstall). Idempotent - deactivating a fingerprint that is not active succeeds as a no-op (wasActive false). Rate-limited per IP.
 
 Request body example:
 
@@ -1746,7 +1771,7 @@ Response example (HTTP 200):
 
 Errors: `validation_failed`, `license_invalid`, `rate_limited`.
 
-### GET /api/v1/webhook-endpoints — List webhook endpoints (secret never returned)
+### GET /api/v1/webhook-endpoints - List webhook endpoints (secret never returned)
 
 operationId: `listWebhookEndpoints` · scope `webhooks:manage`
 
@@ -1777,19 +1802,19 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
 
-### POST /api/v1/webhook-endpoints — Register a webhook endpoint
+### POST /api/v1/webhook-endpoints - Register a webhook endpoint
 
 operationId: `createWebhookEndpoint` · scope `webhooks:manage`
 
-url must be a public https address (private/internal IPs rejected —
+url must be a public https address (private/internal IPs rejected -
 SSRF guard). events is a non-empty array of event types, or ["*"] for
 everything. The HMAC `secret` is returned EXACTLY ONCE in this response
-— store it immediately; it cannot be retrieved again. See the
+- store it immediately; it cannot be retrieved again. See the
 x-webhooks section for the signature scheme (X-Getly-Signature-V2,
 300s tolerance).
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -1831,12 +1856,12 @@ Response example (HTTP 201):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
 
-### PATCH /api/v1/webhook-endpoints/{id} — Update a webhook endpoint (url, events, isActive)
+### PATCH /api/v1/webhook-endpoints/{id} - Update a webhook endpoint (url, events, isActive)
 
 operationId: `updateWebhookEndpoint` · scope `webhooks:manage`
 
 Parameters:
-- `id` (path, required) — Webhook endpoint id (uuid).
+- `id` (path, required) - Webhook endpoint id (uuid).
 
 Request body example:
 
@@ -1866,12 +1891,12 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `validation_failed`, `rate_limited`.
 
-### DELETE /api/v1/webhook-endpoints/{id} — Delete a webhook endpoint
+### DELETE /api/v1/webhook-endpoints/{id} - Delete a webhook endpoint
 
 operationId: `deleteWebhookEndpoint` · scope `webhooks:manage`
 
 Parameters:
-- `id` (path, required) — Webhook endpoint id (uuid).
+- `id` (path, required) - Webhook endpoint id (uuid).
 
 Response example (HTTP 200):
 
@@ -1887,7 +1912,7 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### GET /api/v1/public/stores/{slug}/products — List a store's active products (PUBLIC, no auth)
+### GET /api/v1/public/stores/{slug}/products - List a store's active products (PUBLIC, no auth)
 
 operationId: `listPublicStoreProducts` · Public (no auth required)
 
@@ -1896,9 +1921,9 @@ Load-bearing for the storefront widget. NO auth; CORS *; CDN-cached
 or suspended store reads as 404. Cursor pagination. Rate-limited per IP.
 
 Parameters:
-- `slug` (path, required) — Store slug.
-- `cursor` (query) — Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" — treat as opaque).
-- `limit` (query) — Page size, 1-100 (default 20).
+- `slug` (path, required) - Store slug.
+- `cursor` (query) - Opaque pagination cursor from the previous page's `nextCursor` (base64 of "createdAtISO|id" - treat as opaque).
+- `limit` (query) - Page size, 1-100 (default 20).
 
 Response example (HTTP 200):
 
@@ -1941,15 +1966,15 @@ Response example (HTTP 200):
 
 Errors: `not_found`, `validation_failed`, `rate_limited`.
 
-### GET /api/v1/public/stores/{slug}/products/{productSlug} — Get one active product of a store (PUBLIC, no auth)
+### GET /api/v1/public/stores/{slug}/products/{productSlug} - Get one active product of a store (PUBLIC, no auth)
 
 operationId: `getPublicStoreProduct` · Public (no auth required)
 
-Same shape as the public list plus full description fields and `paymentMethods` — the buyer rails live right now, in display order (card | paypal | crypto; card is paused today). The Pay Widget draws one button per entry. Non-active products (draft/pending/rejected/archived) read as 404. CDN-cached (s-maxage=300).
+Same shape as the public list plus full description fields and `paymentMethods` - the buyer rails live right now, in display order (card | crypto). The Pay Widget draws one button per entry. Non-active products (draft/pending/rejected/archived) read as 404. CDN-cached (s-maxage=300).
 
 Parameters:
-- `slug` (path, required) — Store slug.
-- `productSlug` (path, required) — Product slug.
+- `slug` (path, required) - Store slug.
+- `productSlug` (path, required) - Product slug.
 
 Response example (HTTP 200):
 
@@ -1961,7 +1986,7 @@ Response example (HTTP 200):
     "slug": "notion-startup-os-lx2a9f",
     "name": "Notion Startup OS",
     "shortDescription": "Run your startup from one Notion workspace.",
-    "description": "A complete startup operating system for Notion — hiring, fundraising, OKRs.",
+    "description": "A complete startup operating system for Notion - hiring, fundraising, OKRs.",
     "priceCents": 2900,
     "price": 2900,
     "currency": "USD",
@@ -1978,7 +2003,6 @@ Response example (HTTP 200):
       "buy": "https://www.getly.store/product/notion-startup-os-lx2a9f"
     },
     "paymentMethods": [
-      "paypal",
       "crypto"
     ]
   }
@@ -1987,7 +2011,43 @@ Response example (HTTP 200):
 
 Errors: `not_found`, `rate_limited`.
 
-### GET /api/v1/store — Get your store profile
+### GET /api/v1/public/products/{slug} - Get a product card by product slug (PUBLIC, no auth)
+
+operationId: `getPublicProductCard` · Public (no auth required)
+
+A compact card for partner embeds that only know the product page URL (getly.store/product/{slug}). Product slugs are globally unique, so no store slug is needed. priceCents is the price a buyer pays right now (a live flash sale is applied). imageUrl is the first image or null. Non-active products and products of suspended sellers read as 404. CORS open, CDN-cached (s-maxage=300).
+
+Parameters:
+- `slug` (path, required) - Product slug (max 500 characters).
+
+Response example (HTTP 200):
+
+```json
+{
+  "success": true,
+  "data": {
+    "slug": "notion-startup-os-lx2a9f",
+    "name": "Notion Startup OS",
+    "shortDescription": "Run your startup from one Notion workspace.",
+    "priceCents": 2900,
+    "currency": "USD",
+    "avgRating": 4.8,
+    "reviewCount": 12,
+    "imageUrl": "https://cdn.getly.store/images/api/store-uuid/abc123.webp",
+    "store": {
+      "name": "Soft Premium",
+      "slug": "softpremium"
+    },
+    "urls": {
+      "product": "https://www.getly.store/product/notion-startup-os-lx2a9f"
+    }
+  }
+}
+```
+
+Errors: `validation_failed`, `not_found`, `rate_limited`.
+
+### GET /api/v1/store - Get your store profile
 
 operationId: `getStore` · scope `read:store`
 
@@ -2011,18 +2071,24 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### POST /api/v1/store — Create a store (one per user)
+### POST /api/v1/store - Create a store (one per user)
 
 operationId: `createStore` · scope `write:store`
 
-Creates the store for the key's user if none exists (409 otherwise —
+Creates the store for the key's user if none exists (409 otherwise -
 keys are store-bound, one store per user). Slug normalizes to a-z 0-9
 dashes; omit it to auto-generate a unique one from the name. New stores
 get the early-seller promo (90% revenue share for 90 days) and the user
 role is bumped to seller.
 
+Since 2026-10-28 a new seller needs a verified account email (403
+email_unverified: verify it in the Getly dashboard) and a country:
+send country as an ISO 3166-1 alpha-2 code such as "DE" or "US"
+(400 validation_failed, param country, when it is missing and the
+account has none on file).
+
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Request body example:
 
@@ -2030,7 +2096,8 @@ Request body example:
 {
   "name": "Maker Studio",
   "slug": "maker-studio",
-  "description": "Templates and tools for makers."
+  "description": "Templates and tools for makers.",
+  "country": "DE"
 }
 ```
 
@@ -2049,13 +2116,13 @@ Response example (HTTP 201):
 }
 ```
 
-Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `idempotency_conflict`, `rate_limited`.
+Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `email_unverified`, `idempotency_conflict`, `rate_limited`.
 
-### PATCH /api/v1/store — Update your store profile
+### PATCH /api/v1/store - Update your store profile
 
 operationId: `updateStore` · scope `write:store`
 
-Updatable — name (1-100 chars), description (≤5000), website (http/https URL), socialLinks (object).
+Updatable - name (1-100 chars), description (≤5000), website (http/https URL), socialLinks (object).
 
 Request body example:
 
@@ -2082,36 +2149,36 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `validation_failed`, `rate_limited`.
 
-### POST /api/v1/store/payout-onboarding — Stripe Connect payout onboarding (retired — answers 410)
+### POST /api/v1/store/payout-onboarding - Stripe Connect payout onboarding (retired - answers 410)
 
 operationId: `createPayoutOnboardingLink` · scope `write:store`
 
 RETIRED. Seller payouts are paid ONLY in stablecoins since
-2026-09-15: USDT/USDC on BNB Smart Chain (minimum $5) or USDT on Tron
-(minimum $15), on the 1st and 15th. The seller saves a wallet at
-https://www.getly.store/dashboard/settings?tab=payments — that step
+2026-09-15: USDT/USDC on BNB Smart Chain (minimum $5) only, on the 1st
+and 15th (Tron payouts ended after the 15 November 2026 run). The seller saves a wallet at
+https://www.getly.store/dashboard/settings?tab=payments - that step
 is not available through the API. Since 2026-09-23 this endpoint no
-longer creates Stripe Connect accounts: after the usual 401/403 checks
-it always answers 410 `payout_route_retired`, with the wallet setup
+longer creates Stripe Connect accounts: after the usual 401 check (any
+scope) it always answers 410 `payout_route_retired`, with the wallet setup
 URL in `errorDetail.walletSetupUrl`. Do not retry it.
 
 Parameters:
-- `Idempotency-Key` (header) — Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict — retry with the SAME key.
+- `Idempotency-Key` (header) - Unique string (≤255 chars) making this POST safely retryable for 24h. Replays return the stored response with `Idempotency-Replayed:true`; a key still processing returns 409 idempotency_conflict - retry with the SAME key.
 
 Response (HTTP 401): 
 
-Errors: `unauthorized`, `insufficient_scope`, `payout_route_retired`, `rate_limited`.
+Errors: `unauthorized`, `payout_route_retired`, `rate_limited`.
 
-### GET /api/v1/payouts — Read-only money snapshot (balances, upcoming payouts)
+### GET /api/v1/payouts - Read-only money snapshot (balances, upcoming payouts)
 
 operationId: `getPayouts` · scope `read:store`
 
 Requires read:store OR read:analytics. Same single source of truth as
 the dashboard payouts page, reconciled with the 1st/15th payout cron.
 All amounts are integer cents. Payouts go out in USDT/USDC on BNB
-Smart Chain (minimum $5) or USDT on Tron (minimum $15); `method` is
+Smart Chain only (minimum $5); `method` is
 crypto for them. `stripe` appears only for older accounts still set to
-the retired Stripe Connect route — their balance is held until a
+the retired Stripe Connect route - their balance is held until a
 wallet is saved (cryptoWalletIncomplete / payoutMethod tell you).
 
 Response example (HTTP 200):
@@ -2166,19 +2233,20 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
 
-### GET /api/v1/orders — List your store's order items (legacy page/limit pagination)
+### GET /api/v1/orders - List your store's order items (legacy page/limit pagination)
 
 operationId: `listOrders` · scope `read:orders`
 
-NOTE — this endpoint uses legacy offset pagination (?page from 1,
+NOTE - this endpoint uses legacy offset pagination (?page from 1,
 ?limit 1-50), NOT cursors. Returns order items of your store with the
 parent order and product, including the buyer's email (order.buyer.email)
 so you can deliver license keys. price,
-sellerAmount and platformAmount are integer cents.
+sellerAmount and platformAmount are integer cents. order.total is the sum
+of your store's items in that order, never other sellers' lines.
 
 Parameters:
-- `page` (query) — Page number, from 1.
-- `limit` (query) — Items per page, 1-50 (default 20).
+- `page` (query) - Page number, from 1.
+- `limit` (query) - Items per page, 1-50 (default 20).
 
 Response example (HTTP 200):
 
@@ -2220,14 +2288,14 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `rate_limited`.
 
-### GET /api/v1/orders/{id} — Get an order (items filtered to your store)
+### GET /api/v1/orders/{id} - Get an order (items filtered to your store)
 
 operationId: `getOrder` · scope `read:orders`
 
-403 when the order contains no items from your store. Includes buyerEmail (also buyer.email) so you can deliver license keys. total and item amounts are integer cents.
+403 when the order contains no items from your store. Includes buyerEmail (also buyer.email) so you can deliver license keys. total is the sum of YOUR store's items in the order (other sellers' lines in a multi-store cart are never included); total and item amounts are integer cents.
 
 Parameters:
-- `id` (path, required) — Order id (uuid).
+- `id` (path, required) - Order id (uuid).
 
 Response example (HTTP 200):
 
@@ -2261,7 +2329,7 @@ Response example (HTTP 200):
 
 Errors: `unauthorized`, `insufficient_scope`, `not_found`, `rate_limited`.
 
-### GET /api/v1/analytics — Sales analytics for your store
+### GET /api/v1/analytics - Sales analytics for your store
 
 operationId: `getAnalytics` · scope `read:analytics`
 

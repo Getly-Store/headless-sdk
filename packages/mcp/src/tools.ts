@@ -1,5 +1,5 @@
 /**
- * Getly MCP tool registry — 30 tools.
+ * Getly MCP tool registry - 40 tools.
  *
  * Safety model:
  * - The API key comes ONLY from the GETLY_API_KEY environment variable.
@@ -14,7 +14,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { z, type ZodRawShape } from 'zod';
-import { GetlyError, type ImageContentType } from '@getly/sdk';
+import { GetlyError, WEBHOOK_EVENT_TYPES, type ImageContentType } from '@getly/sdk';
 import { apiRequest, getApiKey, getBaseUrl, getClient, GetlyApiError } from './api.js';
 import { searchCategories } from './categories.js';
 
@@ -59,7 +59,7 @@ function refusal(s: string): ToolResult {
 }
 
 export const MISSING_KEY_MESSAGE = [
-  'GETLY_API_KEY is not set — this MCP server reads the Getly API key ONLY from that environment variable (never pass keys as tool arguments, never paste them into chat).',
+  'GETLY_API_KEY is not set - this MCP server reads the Getly API key ONLY from that environment variable (never pass keys as tool arguments, never paste them into chat).',
   '',
   'To set it up, tell the user to:',
   '1. Create an API key at https://www.getly.store/dashboard/developer/keys (grant only the scopes this workflow needs).',
@@ -68,7 +68,7 @@ export const MISSING_KEY_MESSAGE = [
 
 function formatApiError(err: unknown): ToolResult {
   // GetlyApiError (this package's thin client) and GetlyError (@getly/sdk)
-  // carry the same platform error envelope — format them identically.
+  // carry the same platform error envelope - format them identically.
   if (err instanceof GetlyApiError || err instanceof GetlyError) {
     const retryAfterSeconds =
       err instanceof GetlyError ? err.rateLimit.retryAfterSeconds : err.retryAfterSeconds;
@@ -106,7 +106,7 @@ function guarded(
 
 function confirmRefusal(action: string): ToolResult {
   return refusal(
-    `REFUSED: ${action} requires \`confirm: true\`. Do NOT set confirm yourself — ` +
+    `REFUSED: ${action} requires \`confirm: true\`. Do NOT set confirm yourself - ` +
       'first ask the human user to explicitly approve this exact action, and only after ' +
       'they approve, call the tool again with confirm: true.',
   );
@@ -125,10 +125,10 @@ const productIdParam = z.string().uuid().describe('Product id (uuid)');
 
 const LICENSE_TYPES = ['personal', 'commercial', 'extended', 'cc0', 'custom'] as const;
 const licenseTypeDescription =
-  'What the buyer may do with the file: personal, commercial, extended, cc0 or custom. Shown next to the buy button and in the product FAQ. Optional — publishing does not require it, but ask the user rather than guessing: it states their rights, not yours.';
+  'What the buyer may do with the file: personal, commercial, extended, cc0 or custom. Shown next to the buy button and in the product FAQ. Optional - publishing does not require it, but ask the user rather than guessing: it states their rights, not yours.';
 
 const keyPoolEnabledSchema = z.boolean().optional()
-  .describe("Sell YOUR OWN license keys: each buyer gets the next unsold key from the pool (add them with add_product_keys). Mutually exclusive with licenseKeysEnabled (Getly-generated keys) — turning one on turns the other off; both true is rejected.");
+  .describe("Sell YOUR OWN license keys: each buyer gets the next unsold key from the pool (add them with add_product_keys). Mutually exclusive with licenseKeysEnabled (Getly-generated keys) - turning one on turns the other off; both true is rejected.");
 const keyPoolLowThresholdSchema = z.number().int().min(1).max(1000).optional()
   .describe('Send the "running low" email when available pool keys drop to this many (1-1000, default 5)');
 const KEYS_PER_CALL_MAX = 5000;
@@ -136,7 +136,7 @@ const KEYS_PER_CALL_MAX = 5000;
 const billingPlanIdParam = z.string().uuid().describe('Billing plan id (uuid)');
 const billingSubscriptionIdParam = z.string().uuid().describe('Billing subscription id (uuid)');
 const BILLING_NOTE =
-  'Getly Billing sells recurring access to the user\'s OWN product (a SaaS, community or tool on their site), not a catalogue listing. Writes need an approved Billing application (billing_not_approved until then — the user applies at https://www.getly.store/dashboard/billing). Key scopes: read:billing / write:billing.';
+  'Getly Billing sells recurring access to the user\'s OWN product (a SaaS, community or tool on their site), not a catalogue listing. Writes need an approved Billing application (billing_not_approved until then - the user applies at https://www.getly.store/dashboard/billing). Key scopes: read:billing / write:billing.';
 
 interface V1ProductLike {
   id: string;
@@ -149,7 +149,7 @@ interface V1ProductLike {
   licenseType?: string | null;
   keyPoolEnabled?: boolean;
   keyPoolLowThreshold?: number;
-  /** Timed access: 'lifetime' (default) or 'timed' — sold as access for a period. */
+  /** Timed access: 'lifetime' (default) or 'timed' - sold as access for a period. */
   accessMode?: 'lifetime' | 'timed' | string;
   accessTerms?: Array<{ id: string; durationDays: number; priceCents: number; compareAtPriceCents: number | null; label: string | null; isActive: boolean }>;
   createdAt?: string;
@@ -190,7 +190,7 @@ const IMAGE_TYPES: Record<string, ImageContentType> = {
 
 /**
  * Build the canonical Pay Widget embed snippet for a product. The pay.js src is
- * UNVERSIONED (the file updates in place) — never add `integrity=` or `?v=`.
+ * UNVERSIONED (the file updates in place) - never add `integrity=` or `?v=`.
  * Buttons default to `auto` (popup on desktop, redirect on mobile); an explicit
  * mode is stamped only for popup/inline/redirect.
  */
@@ -263,7 +263,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'create_product',
     description:
-      'Create a product in the Getly store (side effect: creates a DRAFT product; money is integer cents). A product cannot go live without a downloadable file, at least one image and a categoryId — attach the file with upload_product_file, then use publish_product. Daily cap: 100 products per API key.',
+      'Create a product in the Getly store (side effect: creates a DRAFT product; money is integer cents). A product cannot go live without a downloadable file, at least one image and a categoryId - attach the file with upload_product_file, then use publish_product. Daily cap: 100 products per API key.',
     annotations: { title: 'Create product' },
     requiresAuth: true,
     inputSchema: {
@@ -275,7 +275,7 @@ export const TOOLS: GetlyTool[] = [
       compareAtPriceCents: z.number().int().min(0).optional()
         .describe('Strike-through "was" price in cents (must be above priceCents to make sense)'),
       categoryId: z.string().uuid().optional()
-        .describe('Category id (uuid) — find one with search_categories. Required before publishing.'),
+        .describe('Category id (uuid) - find one with search_categories. Required before publishing.'),
       tags: z.array(z.string()).max(20).optional().describe('Search tags'),
       images: z.array(z.object({
         url: z.string().url().describe('Image URL (upload local files first via upload_image)'),
@@ -334,7 +334,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'update_product',
     description:
-      'Update fields of an existing product (side effect: modifies the live listing). Cannot publish or archive from here — use publish_product / archive_product, which require human confirmation. Money is integer cents.',
+      'Update fields of an existing product (side effect: modifies the live listing). Cannot publish or archive from here - use publish_product / archive_product, which require human confirmation. Money is integer cents.',
     annotations: { title: 'Update product', idempotentHint: true },
     requiresAuth: true,
     inputSchema: {
@@ -352,7 +352,7 @@ export const TOOLS: GetlyTool[] = [
         altText: z.string().max(255).optional(),
       })).max(20).optional().describe('REPLACES the whole image set when provided'),
       status: z.enum(['draft']).optional()
-        .describe("Only 'draft' (unpublish) is allowed here. Publishing requires publish_product; archiving requires archive_product — both need human confirmation."),
+        .describe("Only 'draft' (unpublish) is allowed here. Publishing requires publish_product; archiving requires archive_product - both need human confirmation."),
       licenseKeysEnabled: z.boolean().optional(),
       licenseActivationLimit: z.number().int().min(1).max(100).optional(),
       licenseType: z.enum(LICENSE_TYPES).nullable().optional()
@@ -386,7 +386,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'publish_product',
     description:
-      'Publish a draft product so it becomes publicly purchasable (side effect: goes live and can take real money). REQUIRES confirm: true — ask the human user for explicit approval first. New stores without a completed sale go to moderation review instead of straight live. Returns machine-readable blockers if the product is not ready (e.g. missing downloadable file).',
+      'Publish a draft product so it becomes publicly purchasable (side effect: goes live and can take real money). REQUIRES confirm: true - ask the human user for explicit approval first. New stores without a completed sale go to moderation review instead of straight live. Returns machine-readable blockers if the product is not ready (e.g. missing downloadable file).',
     annotations: { title: 'Publish product' },
     requiresAuth: true,
     inputSchema: {
@@ -405,8 +405,8 @@ export const TOOLS: GetlyTool[] = [
       const p = env.data;
       const summary =
         p.status === 'active'
-          ? `Published — the product is live at ${p.urls?.product ?? 'its product page'}.`
-          : `Submitted — the product is in moderation review (status: ${p.status}). ${p.note ?? ''}`.trim();
+          ? `Published - the product is live at ${p.urls?.product ?? 'its product page'}.`
+          : `Submitted - the product is in moderation review (status: ${p.status}). ${p.note ?? ''}`.trim();
       return json({ result: summary, product: projectProduct(p) });
     }),
   },
@@ -414,7 +414,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'archive_product',
     description:
-      'Archive (soft-delete) a product: it disappears from the store and stops selling; existing buyers keep their downloads. DESTRUCTIVE — REQUIRES confirm: true; ask the human user for explicit approval first. Reversible only by re-publishing later.',
+      'Archive (soft-delete) a product: it disappears from the store and stops selling; existing buyers keep their downloads. DESTRUCTIVE - REQUIRES confirm: true; ask the human user for explicit approval first. Reversible only by re-publishing later.',
     annotations: { title: 'Archive product', destructiveHint: true },
     requiresAuth: true,
     inputSchema: {
@@ -437,7 +437,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'upload_product_file',
     description:
-      'Upload a local file as the downloadable a buyer receives (side effect: attaches the file to the product). SLOW for large files (up to 2GB) — the bytes are read from disk and uploaded to storage; do not retry while a call is still running. Flow: presigned URL → upload → attach.',
+      'Upload a local file as the downloadable a buyer receives (side effect: attaches the file to the product). SLOW for large files (up to 2GB) - the bytes are read from disk and uploaded to storage; do not retry while a call is still running. Flow: presigned URL → upload → attach.',
     annotations: { title: 'Upload product file (slow)' },
     requiresAuth: true,
     inputSchema: {
@@ -472,7 +472,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'upload_image',
     description:
-      'Upload a local image (png/jpg/webp/gif/avif, max 10MB) to Getly storage and return its public URL — use that URL in create_product/update_product images[] or as a blog post coverImageUrl. Side effect: stores the image (auto-deleted after 24h if never attached to anything).',
+      'Upload a local image (png/jpg/webp/gif/avif, max 10MB) to Getly storage and return its public URL - use that URL in create_product/update_product images[] or as a blog post coverImageUrl. Side effect: stores the image (auto-deleted after 24h if never attached to anything).',
     annotations: { title: 'Upload image' },
     requiresAuth: true,
     inputSchema: {
@@ -486,7 +486,7 @@ export const TOOLS: GetlyTool[] = [
       }
       const info = await stat(filePath).catch(() => null);
       if (!info?.isFile()) return refusal(`File not found (or not a regular file): ${filePath}`);
-      if (info.size > 10 * 1024 * 1024) return refusal('Image too large — max 10MB.');
+      if (info.size > 10 * 1024 * 1024) return refusal('Image too large - max 10MB.');
 
       // @getly/sdk one-call flow: presignImage → PUT the bytes.
       const bytes = await readFile(filePath);
@@ -507,7 +507,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'list_product_keys',
     description:
-      "Show a product's own-license-key pool: counts (available / issued / waiting — paid orders waiting because the pool ran out) and a page of MASKED keys in sale order (the plaintext is never returned). refunded=true on an issued key means that sale was refunded — tell the user to revoke the key in their own system. Read-only.",
+      "Show a product's own-license-key pool: counts (available / issued / waiting - paid orders waiting because the pool ran out) and a page of MASKED keys in sale order (the plaintext is never returned). refunded=true on an issued key means that sale was refunded - tell the user to revoke the key in their own system. Read-only.",
     annotations: { title: 'List product keys', readOnlyHint: true },
     requiresAuth: true,
     inputSchema: {
@@ -538,7 +538,7 @@ export const TOOLS: GetlyTool[] = [
       const keys = args.keys as string[];
       if (!Array.isArray(keys) || keys.length === 0) return refusal('keys must be a non-empty array of strings.');
       if (keys.length > KEYS_PER_CALL_MAX) {
-        return refusal(`Too many keys in one call (${keys.length}). The API accepts at most ${KEYS_PER_CALL_MAX} — split the list and call again.`);
+        return refusal(`Too many keys in one call (${keys.length}). The API accepts at most ${KEYS_PER_CALL_MAX} - split the list and call again.`);
       }
       const env = await apiRequest<Record<string, number>>(`api/v1/products/${args.productId}/keys`, {
         method: 'POST',
@@ -643,7 +643,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'create_coupon',
     description:
-      'Create a discount coupon (side effect: buyers can immediately redeem it and pay less). type=percentage → value is 1-100; type=fixed → value is integer CENTS off. Discounts of 50%+ REQUIRE confirm: true — ask the human user first. Daily cap: 30 coupons per API key.',
+      'Create a discount coupon (side effect: buyers can immediately redeem it and pay less). type=percentage → value is 1-100; type=fixed → value is integer CENTS off. Discounts of 50%+ REQUIRE confirm: true - ask the human user first. Daily cap: 30 coupons per API key.',
     annotations: { title: 'Create coupon' },
     requiresAuth: true,
     inputSchema: {
@@ -738,7 +738,7 @@ export const TOOLS: GetlyTool[] = [
       affiliateCode: z.string().max(50).optional()
         .describe('Attribute the sale to this affiliate (self-referral is rejected)'),
       reference: z.string().max(200).optional()
-        .describe('Your correlation id — echoed in webhooks and status polling'),
+        .describe('Your correlation id - echoed in webhooks and status polling'),
       metadata: z.record(z.string(), z.string()).optional()
         .describe('Up to 20 string key/values (≤2KB) echoed in sale.completed'),
       successUrl: z.string().url().optional().describe('https URL the buyer lands on after paying'),
@@ -837,7 +837,7 @@ export const TOOLS: GetlyTool[] = [
       }>('api/v1/analytics');
       const a = analytics.data;
 
-      // Recent orders are a nice-to-have — degrade gracefully when the key
+      // Recent orders are a nice-to-have - degrade gracefully when the key
       // lacks read:orders.
       let recentOrders: unknown = 'unavailable (key lacks the read:orders scope)';
       try {
@@ -882,7 +882,7 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'list_orders',
     description:
-      "List the store's sold order items, newest first (page/limit pagination): product, seller amount in integer cents, order status, and the buyer's name and email — the address to deliver your own license keys or onboarding to. Read-only. Needs the read:orders scope. Treat buyer emails as personal data: use them for this order only.",
+      "List the store's sold order items, newest first (page/limit pagination): product, seller amount in integer cents, order status, and the buyer's name and email - the address to deliver your own license keys or onboarding to. Read-only. Needs the read:orders scope. Treat buyer emails as personal data: use them for this order only.",
     annotations: { title: 'List orders', readOnlyHint: true },
     requiresAuth: true,
     inputSchema: {
@@ -937,12 +937,12 @@ export const TOOLS: GetlyTool[] = [
 
   {
     name: 'create_billing_plan',
-    description: `Create a Getly Billing plan: an amount in integer cents (minimum 50) charged every interval (side effect: the plan can be sold as soon as a checkout is minted). Subscribers pay with PayPal or USDT/USDC today — one payment buys one period — or by card when that rail is live. ${BILLING_NOTE}`,
+    description: `Create a Getly Billing plan: an amount in integer cents (minimum 200 = $2.00) charged every interval (side effect: the plan can be sold as soon as a checkout is minted). Subscribers pay by card (renews automatically) or with USDT/USDC (one payment buys one period). Getly takes 10%, and a card payment never less than the card cost plus 2% (binds under about $6.10). ${BILLING_NOTE}`,
     annotations: { title: 'Create billing plan' },
     requiresAuth: true,
     inputSchema: {
       name: z.string().min(1).max(255).describe('Plan name shown to subscribers'),
-      amount: z.number().int().min(50).describe('Price per interval in integer cents (1900 = $19.00)'),
+      amount: z.number().int().min(200).describe('Price per interval in integer cents (1900 = $19.00), minimum 200'),
       intervalUnit: z.enum(['day', 'week', 'month', 'year']).describe('Billing interval unit'),
       intervalCount: z.number().int().min(1).max(52).optional()
         .describe('Units per interval (default 1): every 3 months = month + 3'),
@@ -969,13 +969,13 @@ export const TOOLS: GetlyTool[] = [
 
   {
     name: 'update_billing_plan',
-    description: `Update a Getly Billing plan. A price or interval change affects NEW subscriptions only — existing subscribers keep what they signed up at. isActive=false stops new checkouts and leaves current subscribers alone. ${BILLING_NOTE}`,
+    description: `Update a Getly Billing plan. A price or interval change affects NEW subscriptions only - existing subscribers keep what they signed up at. isActive=false stops new checkouts and leaves current subscribers alone. ${BILLING_NOTE}`,
     annotations: { title: 'Update billing plan', idempotentHint: true },
     requiresAuth: true,
     inputSchema: {
       planId: billingPlanIdParam,
       name: z.string().min(1).max(255).optional(),
-      amount: z.number().int().min(50).optional().describe('New price in integer cents'),
+      amount: z.number().int().min(200).optional().describe('New price in integer cents, minimum 200'),
       intervalUnit: z.enum(['day', 'week', 'month', 'year']).optional(),
       intervalCount: z.number().int().min(1).max(52).optional(),
       description: z.string().max(2000).nullable().optional(),
@@ -1050,7 +1050,7 @@ export const TOOLS: GetlyTool[] = [
 
   {
     name: 'get_billing_subscription',
-    description: `Get one Getly Billing subscription — the check before granting access. Treat status active AND past_due as entitled until currentPeriodEnd; canceled and expired are not. Read-only. ${BILLING_NOTE}`,
+    description: `Get one Getly Billing subscription - the check before granting access. Treat status active AND past_due as entitled until currentPeriodEnd; canceled and expired are not. Read-only. ${BILLING_NOTE}`,
     annotations: { title: 'Get billing subscription', readOnlyHint: true },
     requiresAuth: true,
     inputSchema: { subscriptionId: billingSubscriptionIdParam },
@@ -1062,7 +1062,7 @@ export const TOOLS: GetlyTool[] = [
 
   {
     name: 'cancel_billing_subscription',
-    description: `Stop a Getly Billing subscription from renewing (side effect: the customer is not charged again; they keep access to the end of the paid period — never an immediate cut-off). REQUIRES confirm: true — ask the human user first. ${BILLING_NOTE}`,
+    description: `Stop a Getly Billing subscription from renewing (side effect: the customer is not charged again; they keep access to the end of the paid period - never an immediate cut-off). REQUIRES confirm: true - ask the human user first. ${BILLING_NOTE}`,
     annotations: { title: 'Cancel billing subscription', destructiveHint: true, idempotentHint: true },
     requiresAuth: true,
     inputSchema: {
@@ -1133,12 +1133,12 @@ export const TOOLS: GetlyTool[] = [
   {
     name: 'get_pay_widget_code',
     description:
-      'Generate the Pay Widget embed snippet (a <script> tag + a Buy button/div) that sells ONE of your products from ANY external website — a landing page, quiz funnel, link-in-bio, Webflow/Framer/Carrd site. The button asks for the buyer\'s email and offers every rail that is live — PayPal and USDT/USDC today (card checkout is paused; it reappears on its own when it returns). Getly handles delivery, receipts, refunds and the payout. The store must be approved for the Pay Widget first (the seller requests access at /dashboard/pay-widget). No API key ever touches the browser. Validates that the product is active and publicly purchasable first. Read-only — it only returns code, it changes nothing.',
+      'Generate the Pay Widget embed snippet (a <script> tag + a Buy button/div) that sells ONE of your products from ANY external website - a landing page, quiz funnel, link-in-bio, Webflow/Framer/Carrd site. The button asks for the buyer\'s email and offers every rail that is live: card and USDT/USDC today. Getly handles delivery, receipts, refunds and the payout. The store must be approved for the Pay Widget first (the seller requests access at /dashboard/pay-widget). No API key ever touches the browser. Validates that the product is active and publicly purchasable first. Read-only - it only returns code, it changes nothing.',
     annotations: { title: 'Get Pay Widget embed code', readOnlyHint: true },
     requiresAuth: true,
     inputSchema: {
       productSlug: z.string().min(1)
-        .describe('The product SLUG (from list_products → slug, or the product URL) — not the uuid.'),
+        .describe('The product SLUG (from list_products → slug, or the product URL) - not the uuid.'),
       mode: z.enum(['auto', 'popup', 'inline', 'redirect']).optional()
         .describe("Embed mode. auto (default): popup on desktop, same-tab redirect on mobile. popup: always a popup. inline: the email field and payment buttons rendered inside a <div>. redirect: same-tab."),
     },
@@ -1146,7 +1146,7 @@ export const TOOLS: GetlyTool[] = [
       const productSlug = String(args.productSlug);
       const mode = (args.mode as string | undefined) || 'auto';
 
-      // The widget needs data-store — resolve the key's own store slug.
+      // The widget needs data-store - resolve the key's own store slug.
       const storeEnv = await apiRequest<{ slug: string; name?: string }>('api/v1/store');
       const storeSlug = String(storeEnv.data.slug);
 
@@ -1173,7 +1173,7 @@ export const TOOLS: GetlyTool[] = [
 
       if (!product || typeof product.priceCents !== 'number' || product.priceCents <= 0) {
         return refusal(
-          `Product "${productSlug}" is not purchasable through the Pay Widget — it must be a fixed-price product above $0. ` +
+          `Product "${productSlug}" is not purchasable through the Pay Widget - it must be a fixed-price product above $0. ` +
             'Free or pay-what-you-want products check out on their product page, not the widget.',
         );
       }
@@ -1196,9 +1196,172 @@ export const TOOLS: GetlyTool[] = [
           'Optional attributes: data-success-url="https://…" (where the buyer lands after paying), data-price="show" (append the live price to the button label), data-locale="ru"|"de", and data-i18n-buy / data-i18n-loading / data-i18n-error overrides.',
         ],
         security:
-          'The getly:pay:success browser event is an ADVISORY UI signal only — NEVER unlock files, license keys or paid content on it (a visitor can forge it). Getly delivers the product server-side (buyer email + library) once the payment provider confirms payment; verify real sales via the sale.completed / checkout_link.completed webhook.',
+          'The getly:pay:success browser event is an ADVISORY UI signal only - NEVER unlock files, license keys or paid content on it (a visitor can forge it). Getly delivers the product server-side (buyer email + library) once the payment provider confirms payment; verify real sales via the sale.completed / checkout_link.completed webhook.',
         docs: `${getBaseUrl()}/pay-widget`,
       });
+    }),
+  },
+  // ------------------------------------------------- added in 0.4.0 --------
+  {
+    name: 'get_order',
+    description:
+      "Get one order with only YOUR store's items: product, price and your amount in integer cents, status, and the buyer's name and email (to deliver your own license keys or onboarding). 403 when the order has none of your items. Read-only. Needs read:orders. Treat the buyer's email as personal data: use it for this order only.",
+    annotations: { title: 'Get order', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: { orderId: z.string().uuid().describe('Order id (uuid), e.g. from list_orders') },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/orders/${encodeURIComponent(args.orderId as string)}`);
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'get_payouts',
+    description:
+      'Read-only money snapshot of the store: balances owed to the seller, the next payout date and amount, and recent payouts. Payouts go in USDT/USDC on BNB Smart Chain on the 1st and 15th of each month. All amounts in integer cents. Needs read:store.',
+    annotations: { title: 'Get payouts', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {},
+    handler: guarded(true, async () => {
+      const env = await apiRequest<Record<string, unknown>>('api/v1/payouts');
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'update_coupon',
+    description:
+      'Update a coupon: isActive, expiresAt or maxUses only. The code, type and value are immutable (changing a live discount would silently change codes already shared): to change them, create a new coupon and deactivate this one. Needs write:coupons.',
+    annotations: { title: 'Update coupon', idempotentHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      couponId: z.string().uuid().describe('Coupon id (uuid), from list_coupons'),
+      isActive: z.boolean().optional().describe('false stops new redemptions immediately'),
+      expiresAt: z.string().nullable().optional().describe('New expiry (ISO 8601), or null for no expiry'),
+      maxUses: z.number().int().min(1).nullable().optional().describe('New total redemption limit, or null for unlimited'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/coupons/${encodeURIComponent(args.couponId as string)}`, {
+        method: 'PATCH',
+        body: { isActive: args.isActive, expiresAt: args.expiresAt, maxUses: args.maxUses },
+      });
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'delete_coupon',
+    description:
+      'Delete a coupon that was NEVER used (a used coupon answers 409: deactivate it with update_coupon isActive:false instead). Irreversible: REQUIRES confirm: true, ask the human user first. Needs write:coupons.',
+    annotations: { title: 'Delete coupon', destructiveHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      couponId: z.string().uuid().describe('Coupon id (uuid), from list_coupons'),
+      confirm: z.boolean().optional().describe('Only true after the human user explicitly approved deleting this coupon'),
+    },
+    handler: guarded(true, async (args) => {
+      if (args.confirm !== true) return confirmRefusal('delete_coupon (deletes the coupon permanently)');
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/coupons/${encodeURIComponent(args.couponId as string)}`, { method: 'DELETE' });
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'update_blog_post',
+    description:
+      'Update a blog post on the store: title, contentMarkdown, status (draft or published; publishing makes it public at once), excerpt, coverImageUrl, slug. null clears excerpt or cover. Needs write:posts.',
+    annotations: { title: 'Update blog post', idempotentHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      postId: z.string().uuid().describe('Post id (uuid), from list_blog_posts'),
+      title: z.string().min(1).max(200).optional(),
+      contentMarkdown: z.string().min(1).optional().describe('Full new body in Markdown (replaces the old body)'),
+      status: z.enum(['draft', 'published']).optional(),
+      excerpt: z.string().max(500).nullable().optional(),
+      coverImageUrl: z.string().url().nullable().optional().describe('Upload a local file first with upload_image'),
+      slug: z.string().min(1).max(200).optional(),
+    },
+    handler: guarded(true, async (args) => {
+      const { postId, ...rest } = args;
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/posts/${encodeURIComponent(postId as string)}`, { method: 'PATCH', body: rest });
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'delete_blog_post',
+    description:
+      'Delete a blog post permanently (hard delete; setting status draft hides it instead). Irreversible: REQUIRES confirm: true, ask the human user first. Needs write:posts.',
+    annotations: { title: 'Delete blog post', destructiveHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      postId: z.string().uuid().describe('Post id (uuid), from list_blog_posts'),
+      confirm: z.boolean().optional().describe('Only true after the human user explicitly approved deleting this post'),
+    },
+    handler: guarded(true, async (args) => {
+      if (args.confirm !== true) return confirmRefusal('delete_blog_post (deletes the post permanently)');
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/posts/${encodeURIComponent(args.postId as string)}`, { method: 'DELETE' });
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'list_webhook_endpoints',
+    description:
+      "List the store's webhook endpoints: url, subscribed events, active flag. The signing secret is never returned (it is shown once, on creation). Read-only. Needs webhooks:manage.",
+    annotations: { title: 'List webhook endpoints', readOnlyHint: true },
+    requiresAuth: true,
+    inputSchema: {},
+    handler: guarded(true, async () => {
+      const env = await apiRequest<unknown>('api/v1/webhook-endpoints');
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'create_webhook_endpoint',
+    description: `Register an https URL that receives signed events (header X-Getly-Signature-V2). The response holds the signing secret ONCE: tell the user to store it as an environment variable at once, never paste it into code or chat logs. Events: ${WEBHOOK_EVENT_TYPES.join(', ')}. Needs webhooks:manage.`,
+    annotations: { title: 'Create webhook endpoint' },
+    requiresAuth: true,
+    inputSchema: {
+      url: z.string().url().describe('Public https URL of your endpoint'),
+      events: z.array(z.enum(WEBHOOK_EVENT_TYPES as unknown as [string, ...string[]])).min(1).describe('Events to subscribe to'),
+    },
+    handler: guarded(true, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>('api/v1/webhook-endpoints', {
+        method: 'POST',
+        idempotent: true,
+        body: { url: args.url, events: args.events },
+      });
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'delete_webhook_endpoint',
+    description:
+      'Delete a webhook endpoint: its URL stops receiving events at once (orders, licences or access your server grants on those events stop too). REQUIRES confirm: true, ask the human user first. Needs webhooks:manage.',
+    annotations: { title: 'Delete webhook endpoint', destructiveHint: true },
+    requiresAuth: true,
+    inputSchema: {
+      endpointId: z.string().uuid().describe('Endpoint id (uuid), from list_webhook_endpoints'),
+      confirm: z.boolean().optional().describe('Only true after the human user explicitly approved deleting this endpoint'),
+    },
+    handler: guarded(true, async (args) => {
+      if (args.confirm !== true) return confirmRefusal('delete_webhook_endpoint (the URL stops receiving events)');
+      const env = await apiRequest<Record<string, unknown>>(`api/v1/webhook-endpoints/${encodeURIComponent(args.endpointId as string)}`, { method: 'DELETE' });
+      return json(env.data);
+    }),
+  },
+  {
+    name: 'validate_license',
+    description:
+      'Check a license key a customer gave you: valid or not, status, activations used and left, expiry. Public endpoint, works without an API key; it never activates a seat. Read-only.',
+    annotations: { title: 'Validate license key', readOnlyHint: true },
+    requiresAuth: false,
+    inputSchema: {
+      key: z.string().min(4).max(200).describe('The license key, e.g. GETLY-XXXX-XXXX-XXXX-XXXX'),
+      productId: z.string().uuid().optional().describe('Also require the key to belong to this product'),
+    },
+    handler: guarded(false, async (args) => {
+      const env = await apiRequest<Record<string, unknown>>('api/v1/licenses/validate', {
+        method: 'POST',
+        body: { key: args.key, productId: args.productId },
+        apiKey: null,
+      });
+      return json(env.data);
     }),
   },
 ];

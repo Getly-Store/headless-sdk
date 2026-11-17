@@ -12,14 +12,14 @@ import type {
 export const KEYS_PER_REQUEST_MAX = 5000;
 
 /**
- * Seller key pool — sell YOUR OWN license keys. With keyPoolEnabled on the
+ * Seller key pool - sell YOUR OWN license keys. With keyPoolEnabled on the
  * product, each buyer gets the next unsold key in the order you added them;
  * sale.completed carries it as items[].licenseKey.
  */
 export class ProductKeysResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** GET /api/v1/products/{id}/keys — counters + one page of masked keys (scope read:products). */
+  /** GET /api/v1/products/{id}/keys - counters + one page of masked keys (scope read:products). */
   async list(productId: string, params: ProductKeyListParams = {}): Promise<ProductKeyPool> {
     const res = await this.http.request<Envelope<ProductKeyPool>>(
       'GET',
@@ -41,14 +41,14 @@ export class ProductKeysResource {
   }
 
   /**
-   * POST /api/v1/products/{id}/keys — add up to 5000 keys (each ≤500 chars).
+   * POST /api/v1/products/{id}/keys - add up to 5000 keys (each ≤500 chars).
    * Trimmed, blanks dropped, duplicates counted not added; sold in the order
    * sent; waiting buyers are filled immediately.
    */
   async add(productId: string, keys: string[], opts: MutationOptions = {}): Promise<ProductKeysAddResult> {
     if (keys.length > KEYS_PER_REQUEST_MAX) {
       throw new GetlyError(
-        `products.keys.add: ${keys.length} keys in one call; the API accepts at most ${KEYS_PER_REQUEST_MAX} per request — split the list (use addMany).`,
+        `products.keys.add: ${keys.length} keys in one call; the API accepts at most ${KEYS_PER_REQUEST_MAX} per request - split the list (use addMany).`,
         { status: 0, code: 'validation_failed', param: 'keys' },
       );
     }
@@ -74,7 +74,7 @@ export class ProductKeysResource {
   }
 
   /**
-   * DELETE /api/v1/products/{id}/keys/{keyId} — remove an UNSOLD key. An issued
+   * DELETE /api/v1/products/{id}/keys/{keyId} - remove an UNSOLD key. An issued
    * key is a sale record and stays (GetlyError key_not_available, 409).
    */
   async remove(productId: string, keyId: string): Promise<{ id: string; removed: true }> {

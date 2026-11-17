@@ -19,17 +19,17 @@ import type {
 import { paginate } from './paginate.js';
 import { ProductKeysResource } from './product-keys.js';
 
-const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024; // 2GB — platform hard limit
+const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024; // 2GB - platform hard limit
 
 export class ProductsResource {
-  /** Seller key pool — your own license keys, handed out one per sale. */
+  /** Seller key pool - your own license keys, handed out one per sale. */
   readonly keys: ProductKeysResource;
 
   constructor(private readonly http: HttpClient) {
     this.keys = new ProductKeysResource(http);
   }
 
-  /** GET /api/v1/products — cursor-paginated list of your store's products. */
+  /** GET /api/v1/products - cursor-paginated list of your store's products. */
   async list(params: ProductListParams = {}): Promise<Page<Product>> {
     const res = await this.http.request<Envelope<Page<Product>>>('GET', '/api/v1/products', {
       query: {
@@ -58,7 +58,7 @@ export class ProductsResource {
   }
 
   /**
-   * POST /api/v1/products — create a product (draft by default).
+   * POST /api/v1/products - create a product (draft by default).
    * An Idempotency-Key is generated automatically unless you pass one.
    */
   async create(input: ProductCreateInput, opts: MutationOptions = {}): Promise<ProductWithModeration> {
@@ -79,7 +79,7 @@ export class ProductsResource {
     return res.data;
   }
 
-  /** DELETE /api/v1/products/{id} — soft-delete (status → archived). */
+  /** DELETE /api/v1/products/{id} - soft-delete (status → archived). */
   async archive(id: string): Promise<{ id: string; status: 'archived' }> {
     const res = await this.http.request<Envelope<{ id: string; status: 'archived' }>>(
       'DELETE',
@@ -89,7 +89,7 @@ export class ProductsResource {
   }
 
   /**
-   * POST /api/v1/products/{id}/publish — one-call publish.
+   * POST /api/v1/products/{id}/publish - one-call publish.
    * On 422 the thrown GetlyError has code 'not_publishable' and a
    * machine-readable `reasons` array (missing_file, missing_image,
    * no_category, description_too_short, moderation_locked, …).
@@ -103,7 +103,7 @@ export class ProductsResource {
     return res.data;
   }
 
-  /** GET /api/v1/products/{id}/files — downloadable files attached to a product. */
+  /** GET /api/v1/products/{id}/files - downloadable files attached to a product. */
   async listFiles(productId: string): Promise<ProductFile[]> {
     const res = await this.http.request<Envelope<ProductFile[]>>(
       'GET',
@@ -112,7 +112,7 @@ export class ProductsResource {
     return res.data;
   }
 
-  /** POST /api/v1/products/{id}/files/presign — presigned PUT for a file. */
+  /** POST /api/v1/products/{id}/files/presign - presigned PUT for a file. */
   async presignFile(productId: string, input: PresignFileInput, opts: MutationOptions = {}): Promise<FilePresign> {
     const res = await this.http.request<Envelope<FilePresign>>(
       'POST',
@@ -122,7 +122,7 @@ export class ProductsResource {
     return res.data;
   }
 
-  /** POST /api/v1/products/{id}/files (JSON) — attach a presign-uploaded file. */
+  /** POST /api/v1/products/{id}/files (JSON) - attach a presign-uploaded file. */
   async attachFile(productId: string, input: AttachFileInput, opts: MutationOptions = {}): Promise<ProductFile> {
     const res = await this.http.request<Envelope<ProductFile>>(
       'POST',
@@ -134,7 +134,7 @@ export class ProductsResource {
 
   /**
    * One-call upload: presign → PUT the bytes → attach. Returns the attached
-   * file. Max 2GB (the platform's hard limit — multipart upload for very
+   * file. Max 2GB (the platform's hard limit - multipart upload for very
    * large files is on the roadmap; a single presigned PUT covers 2GB today).
    */
   async uploadFile(productId: string, input: UploadFileInput, opts: MutationOptions = {}): Promise<ProductFile> {
@@ -156,7 +156,7 @@ export class ProductsResource {
       fileType,
     });
 
-    // Content-Length is part of the presign signature — send exactly `size`.
+    // Content-Length is part of the presign signature - send exactly `size`.
     const putRes = await this.http.rawFetch(presign.uploadUrl, {
       method: 'PUT',
       headers: { 'Content-Type': fileType, 'Content-Length': String(size) },
@@ -164,7 +164,7 @@ export class ProductsResource {
     });
     if (!putRes.ok) {
       throw new GetlyError(
-        `uploadFile: storage upload failed (HTTP ${putRes.status}). The presigned URL may have expired (1h) or the byte count changed — retry uploadFile().`,
+        `uploadFile: storage upload failed (HTTP ${putRes.status}). The presigned URL may have expired (1h) or the byte count changed - retry uploadFile().`,
         { status: putRes.status, code: 'internal_error' },
       );
     }
@@ -184,7 +184,7 @@ export class ProductsResource {
 
   /**
    * Throttled batch create respecting the 30/min mutation sublimit and the
-   * 100/day cap. Never throws for individual items — returns per-item
+   * 100/day cap. Never throws for individual items - returns per-item
    * { ok, product | error }. Pass `idempotencyKeyPrefix` to make re-runs
    * replay already-created items instead of duplicating them.
    * On quota_exceeded the remaining items are marked failed without more

@@ -2,13 +2,13 @@ import { GetlyError } from '../error.js';
 import { byteLength, toBodyInit, type Envelope, type HttpClient } from '../http.js';
 import type { ImagePresign, ImagePresignInput, MutationOptions, UploadImageInput } from '../types.js';
 
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB — platform limit
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB - platform limit
 
 export class UploadsResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * POST /api/v1/uploads/images/presign — presigned PUT for an image
+   * POST /api/v1/uploads/images/presign - presigned PUT for an image
    * (product images / post covers). image/* only, <= 10MB.
    */
   async presignImage(input: ImagePresignInput, opts: MutationOptions = {}): Promise<ImagePresign> {
@@ -49,7 +49,7 @@ export class UploadsResource {
     });
     if (!putRes.ok) {
       throw new GetlyError(
-        `uploadImage: storage upload failed (HTTP ${putRes.status}). The presigned URL may have expired (1h) — retry uploadImage().`,
+        `uploadImage: storage upload failed (HTTP ${putRes.status}). The presigned URL may have expired (1h) - retry uploadImage().`,
         { status: putRes.status, code: 'internal_error' },
       );
     }

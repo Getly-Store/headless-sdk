@@ -7,7 +7,7 @@ import type {
 } from '../types.js';
 
 /**
- * The Pay Widget's public checkout — NO API key. You normally embed pay.js
+ * The Pay Widget's public checkout - NO API key. You normally embed pay.js
  * instead of calling this; it is here for custom buttons and server-side
  * checks. Read `paymentMethods` from publicStore.product() first: card
  * checkout is paused today, PayPal and crypto need the buyer's email.
@@ -16,7 +16,7 @@ export class PublicCheckoutResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * POST /api/v1/public/checkout — start a checkout on one rail and get the
+   * POST /api/v1/public/checkout - start a checkout on one rail and get the
    * hosted payment url. A rail that is not live throws GetlyError
    * `payment_method_unavailable` with `details.paymentMethods`.
    */
@@ -29,7 +29,7 @@ export class PublicCheckoutResource {
   }
 
   /**
-   * POST /api/v1/public/checkout with `check: true` — runs every configuration
+   * POST /api/v1/public/checkout with `check: true` - runs every configuration
    * check (store approved, domain allowed, product live, price) and stops
    * before any payment. No counters are spent.
    */
@@ -42,7 +42,7 @@ export class PublicCheckoutResource {
   }
 
   /**
-   * GET /api/v1/public/checkout/{linkId}/status — open | completed | expired.
+   * GET /api/v1/public/checkout/{linkId}/status - open | completed | expired.
    * Advisory only: never unlock content on it; verify sales via sale.completed.
    */
   async status(linkId: string): Promise<PublicCheckoutStatus> {

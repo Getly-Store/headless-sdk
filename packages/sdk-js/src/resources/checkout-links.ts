@@ -13,7 +13,7 @@ export class CheckoutLinksResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * POST /api/v1/checkout-links — mint an instant pay link for one product
+   * POST /api/v1/checkout-links - mint an instant pay link for one product
    * (scope checkout:create). Naturally idempotent per
    * (productId, couponCode, reference): re-creating an open link returns the
    * existing one. Send the buyer to `data.url`.
@@ -26,7 +26,7 @@ export class CheckoutLinksResource {
     return res.data;
   }
 
-  /** GET /api/v1/checkout-links — cursor-paginated list. */
+  /** GET /api/v1/checkout-links - cursor-paginated list. */
   async list(params: CheckoutLinkListParams = {}): Promise<Page<CheckoutLink>> {
     const res = await this.http.request<Envelope<Page<CheckoutLink>>>(
       'GET',
@@ -41,7 +41,7 @@ export class CheckoutLinksResource {
   }
 
   /**
-   * GET /api/v1/checkout-links/{id} — status polling (open | completed |
+   * GET /api/v1/checkout-links/{id} - status polling (open | completed |
    * expired, + orderId when completed) for bots without a public webhook URL.
    */
   async get(id: string): Promise<CheckoutLinkPollResult> {

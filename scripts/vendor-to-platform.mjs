@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const platform = process.argv[2] || '/Users/Apple/Desktop/Getly.store';
+const platform = process.argv[2] || '/Users/Apple/Projects/Getly.store';
 
 const esc = (s) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 

@@ -5,7 +5,7 @@ export class PayoutsResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * GET /api/v1/payouts — balances (all integer cents), current period,
+   * GET /api/v1/payouts - balances (all integer cents), current period,
    * lifetime totals and the next scheduled payouts (1st & 15th, both rails).
    */
   async get(): Promise<PayoutsSnapshot> {

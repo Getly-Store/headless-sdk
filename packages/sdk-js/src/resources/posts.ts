@@ -12,7 +12,7 @@ import { paginate } from './paginate.js';
 export class PostsResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** GET /api/v1/posts — your store's blog posts (cursor pagination). */
+  /** GET /api/v1/posts - your store's blog posts (cursor pagination). */
   async list(params: PostListParams = {}): Promise<Page<Post>> {
     const res = await this.http.request<Envelope<Page<Post>>>('GET', '/api/v1/posts', {
       query: { limit: params.limit, cursor: params.cursor, status: params.status },
@@ -34,7 +34,7 @@ export class PostsResource {
   }
 
   /**
-   * POST /api/v1/posts — markdown is the source of truth (contentMarkdown).
+   * POST /api/v1/posts - markdown is the source of truth (contentMarkdown).
    * Daily cap: 5 posts/day per key (quota_exceeded).
    */
   async create(input: PostCreateInput, opts: MutationOptions = {}): Promise<Post> {

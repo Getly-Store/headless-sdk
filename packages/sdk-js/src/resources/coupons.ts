@@ -12,7 +12,7 @@ import { paginate } from './paginate.js';
 export class CouponsResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** GET /api/v1/coupons — your store's coupons (cursor pagination). */
+  /** GET /api/v1/coupons - your store's coupons (cursor pagination). */
   async list(params: CouponListParams = {}): Promise<Page<Coupon>> {
     const res = await this.http.request<Envelope<Page<Coupon>>>('GET', '/api/v1/coupons', {
       query: {
@@ -29,7 +29,7 @@ export class CouponsResource {
   }
 
   /**
-   * POST /api/v1/coupons — percentage discounts >= 90% require
+   * POST /api/v1/coupons - percentage discounts >= 90% require
    * acknowledgeHighDiscount: true (error high_discount_ack_required).
    * Daily cap: 30/day per key.
    */
@@ -42,7 +42,7 @@ export class CouponsResource {
   }
 
   /**
-   * PATCH /api/v1/coupons/{id} — only isActive / expiresAt / maxUses are
+   * PATCH /api/v1/coupons/{id} - only isActive / expiresAt / maxUses are
    * mutable. code/type/value are immutable: create a new coupon instead.
    */
   async update(id: string, input: CouponUpdateInput): Promise<Coupon> {
@@ -54,7 +54,7 @@ export class CouponsResource {
     return res.data;
   }
 
-  /** DELETE /api/v1/coupons/{id} — only never-used coupons can be deleted. */
+  /** DELETE /api/v1/coupons/{id} - only never-used coupons can be deleted. */
   async delete(id: string): Promise<{ id: string; deleted: true }> {
     const res = await this.http.request<Envelope<{ id: string; deleted: true }>>(
       'DELETE',

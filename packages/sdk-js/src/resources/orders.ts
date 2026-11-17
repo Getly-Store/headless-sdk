@@ -15,7 +15,7 @@ export class OrdersResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * GET /api/v1/orders — your store's order items (page/limit pagination —
+   * GET /api/v1/orders - your store's order items (page/limit pagination -
    * this endpoint predates cursor pagination). Buyer emails are never
    * included (privacy).
    */
@@ -43,7 +43,7 @@ export class OrdersResource {
     }
   }
 
-  /** GET /api/v1/orders/{id} — only items belonging to your store. */
+  /** GET /api/v1/orders/{id} - only items belonging to your store. */
   async get(id: string): Promise<Order> {
     const res = await this.http.request<{ success: true; data: Order }>(
       'GET',

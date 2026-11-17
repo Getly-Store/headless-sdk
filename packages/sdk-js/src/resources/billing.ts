@@ -19,11 +19,11 @@ interface SubscriptionsListEnvelope {
   pagination: { limit: number; offset: number; hasMore: boolean };
 }
 
-/** Plans — recurring prices for your own product (scopes read:billing / write:billing). */
+/** Plans - recurring prices for your own product (scopes read:billing / write:billing). */
 export class BillingPlansResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** GET /api/v1/billing/plans — your plans, newest first. */
+  /** GET /api/v1/billing/plans - your plans, newest first. */
   async list(params: BillingPlanListParams = {}): Promise<BillingPlan[]> {
     const res = await this.http.request<Envelope<BillingPlan[]>>('GET', '/api/v1/billing/plans', {
       query: { active: params.active === undefined ? undefined : String(params.active) },
@@ -41,7 +41,7 @@ export class BillingPlansResource {
   }
 
   /**
-   * POST /api/v1/billing/plans — needs an approved Billing application
+   * POST /api/v1/billing/plans - needs an approved Billing application
    * (403 billing_not_approved until then; apply at /dashboard/billing).
    * 409 plan_exists when the externalId is already used.
    */
@@ -53,7 +53,7 @@ export class BillingPlansResource {
     return res.data;
   }
 
-  /** PATCH /api/v1/billing/plans/{id} — price/interval changes affect NEW subscriptions only. */
+  /** PATCH /api/v1/billing/plans/{id} - price/interval changes affect NEW subscriptions only. */
   async update(id: string, input: BillingPlanUpdateInput): Promise<BillingPlan> {
     const res = await this.http.request<Envelope<BillingPlan>>(
       'PATCH',
@@ -68,7 +68,7 @@ export class BillingPlansResource {
 export class BillingSubscriptionsResource {
   constructor(private readonly http: HttpClient) {}
 
-  /** GET /api/v1/billing/subscriptions — newest first, limit/offset pagination. */
+  /** GET /api/v1/billing/subscriptions - newest first, limit/offset pagination. */
   async list(params: BillingSubscriptionListParams = {}): Promise<BillingSubscriptionListResult> {
     const res = await this.http.request<SubscriptionsListEnvelope>('GET', '/api/v1/billing/subscriptions', {
       query: {
@@ -96,7 +96,7 @@ export class BillingSubscriptionsResource {
   }
 
   /**
-   * GET /api/v1/billing/subscriptions/{id} — the status check before granting
+   * GET /api/v1/billing/subscriptions/{id} - the status check before granting
    * access. Treat `active` AND `past_due` as entitled until currentPeriodEnd.
    */
   async get(id: string): Promise<BillingSubscription> {
@@ -108,7 +108,7 @@ export class BillingSubscriptionsResource {
   }
 
   /**
-   * POST /api/v1/billing/subscriptions/{id}/cancel — stop renewal at the end of
+   * POST /api/v1/billing/subscriptions/{id}/cancel - stop renewal at the end of
    * the paid period (never an immediate cut-off). Idempotent. 409
    * subscription_not_cancellable when it already ended.
    */
@@ -123,7 +123,7 @@ export class BillingSubscriptionsResource {
 }
 
 /**
- * Getly Billing — recurring plans for your OWN product (a SaaS, community or
+ * Getly Billing - recurring plans for your OWN product (a SaaS, community or
  * tool on your site). The hosted page offers the live rails: PayPal and
  * USDT/USDC today (one payment buys one period), card when that rail returns.
  */
@@ -137,7 +137,7 @@ export class BillingResource {
   }
 
   /**
-   * POST /api/v1/billing/checkout — a signed hosted subscribe page (valid 24h)
+   * POST /api/v1/billing/checkout - a signed hosted subscribe page (valid 24h)
    * for ONE customer. customerRef is echoed on every billing.* webhook as
    * externalCustomerRef.
    */

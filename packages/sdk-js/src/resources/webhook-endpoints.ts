@@ -21,8 +21,8 @@ export class WebhookEndpointsResource {
   }
 
   /**
-   * POST /api/v1/webhook-endpoints — register an endpoint. The response
-   * includes `secret` EXACTLY ONCE — persist it immediately (env var), you
+   * POST /api/v1/webhook-endpoints - register an endpoint. The response
+   * includes `secret` EXACTLY ONCE - persist it immediately (env var), you
    * cannot retrieve it again.
    */
   async create(

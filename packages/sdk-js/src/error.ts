@@ -1,5 +1,5 @@
 /**
- * GetlyError — typed error thrown for every non-2xx v1 API response.
+ * GetlyError - typed error thrown for every non-2xx v1 API response.
  *
  * Mirrors the platform error envelope:
  *   { success: false, error: string,
@@ -29,6 +29,8 @@ export type GetlyErrorCode =
   | 'license_expired'
   | 'key_not_available'
   | 'activation_limit_reached'
+  | 'activation_conflict'
+  | 'quality_below_threshold'
   | 'not_purchasable'
   | 'widget_disabled'
   | 'widget_not_approved'
@@ -49,7 +51,7 @@ export interface RateLimitInfo {
   limit: number | null;
   /** X-RateLimit-Remaining. */
   remaining: number | null;
-  /** X-RateLimit-Reset — seconds until the window resets. */
+  /** X-RateLimit-Reset - seconds until the window resets. */
   resetSeconds: number | null;
   /** Retry-After on 429 responses (seconds). */
   retryAfterSeconds: number | null;
@@ -89,6 +91,8 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<GetlyErrorCode>([
   'license_expired',
   'key_not_available',
   'activation_limit_reached',
+  'activation_conflict',
+  'quality_below_threshold',
   'not_purchasable',
   'widget_disabled',
   'widget_not_approved',
@@ -147,7 +151,7 @@ export function parseRateLimitHeaders(headers: Headers): RateLimitInfo {
 export class GetlyError extends Error {
   /** HTTP status of the response (0 for client-side errors). */
   readonly status: number;
-  /** Stable machine code — branch on this, not on the message. */
+  /** Stable machine code - branch on this, not on the message. */
   readonly code: GetlyErrorCode;
   /** LLM/human-actionable hint from the API (what to DO next). */
   readonly hint?: string;

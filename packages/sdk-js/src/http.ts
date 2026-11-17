@@ -3,11 +3,11 @@
  * Idempotency-Key on creates, 429 retries honoring Retry-After, and a
  * proactive throttle driven by X-RateLimit-Remaining.
  *
- * Zero runtime dependencies — global fetch (Node >= 18 / edge).
+ * Zero runtime dependencies - global fetch (Node >= 18 / edge).
  */
 import { GetlyError, parseRateLimitHeaders, type RateLimitInfo } from './error.js';
 
-export const SDK_VERSION = '0.3.1';
+export const SDK_VERSION = '0.4.0';
 export const CLIENT_HEADER = `@getly/sdk/${SDK_VERSION}`;
 export const DEFAULT_BASE_URL = 'https://www.getly.store';
 
@@ -129,12 +129,12 @@ export class HttpClient {
     const useAuth = options.auth !== false;
     if (useAuth && !this.apiKey) {
       throw new GetlyError(
-        'Missing API key. Set the GETLY_API_KEY environment variable (or pass apiKey to new Getly()). Create a key at https://www.getly.store/dashboard/developer/keys — never hardcode it.',
+        'Missing API key. Set the GETLY_API_KEY environment variable (or pass apiKey to new Getly()). Create a key at https://www.getly.store/dashboard/developer/keys - never hardcode it.',
         { status: 0, code: 'unauthorized' },
       );
     }
 
-    // Auto Idempotency-Key on every authenticated POST (creates) — makes the
+    // Auto Idempotency-Key on every authenticated POST (creates) - makes the
     // request replay-safe on the server AND makes our own 429 retries safe.
     let idempotencyKey = options.idempotencyKey;
     if (!idempotencyKey && method === 'POST' && useAuth) {
@@ -179,7 +179,7 @@ export class HttpClient {
       try {
         parsed = await res.json();
       } catch {
-        // Non-JSON body (proxy error page etc.) — handled below.
+        // Non-JSON body (proxy error page etc.) - handled below.
       }
 
       if (!res.ok) {

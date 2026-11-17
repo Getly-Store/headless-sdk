@@ -1,11 +1,11 @@
 import type { Envelope, HttpClient } from '../http.js';
-import type { CursorListParams, PublicProduct, PublicStoreProductsResult } from '../types.js';
+import type { CursorListParams, PublicProduct, PublicProductCard, PublicStoreProductsResult } from '../types.js';
 
 export class PublicStoreResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * GET /api/v1/public/stores/{slug}/products — PUBLIC (no API key needed):
+   * GET /api/v1/public/stores/{slug}/products - PUBLIC (no API key needed):
    * active products of a non-suspended store. CDN-cached ~5 minutes.
    * Powers storefront widgets.
    */
@@ -21,11 +21,26 @@ export class PublicStoreResource {
     return res.data;
   }
 
-  /** GET .../products/{productSlug} — single public product (with description). */
+  /** GET .../products/{productSlug} - single public product (with description). */
   async product(storeSlug: string, productSlug: string): Promise<PublicProduct> {
     const res = await this.http.request<Envelope<PublicProduct>>(
       'GET',
       `/api/v1/public/stores/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}`,
+      { auth: false },
+    );
+    return res.data;
+  }
+
+  /**
+   * GET /api/v1/public/products/{slug} - PUBLIC (no API key): a compact card
+   * by the product slug alone, for embeds that only know the product page URL
+   * (getly.store/product/{slug}). Non-active products and products of
+   * suspended sellers are 404. CDN-cached ~5 minutes.
+   */
+  async card(productSlug: string): Promise<PublicProductCard> {
+    const res = await this.http.request<Envelope<PublicProductCard>>(
+      'GET',
+      `/api/v1/public/products/${encodeURIComponent(productSlug)}`,
       { auth: false },
     );
     return res.data;

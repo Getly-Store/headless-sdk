@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('tool registry', () => {
-  it('exposes exactly 30 tools with stable names', () => {
+  it('exposes exactly 40 tools with stable names', () => {
     expect(TOOL_NAMES).toEqual([
       'list_products',
       'get_product',
@@ -48,8 +48,18 @@ describe('tool registry', () => {
       'search_categories',
       'get_store',
       'get_pay_widget_code',
+      'get_order',
+      'get_payouts',
+      'update_coupon',
+      'delete_coupon',
+      'update_blog_post',
+      'delete_blog_post',
+      'list_webhook_endpoints',
+      'create_webhook_endpoint',
+      'delete_webhook_endpoint',
+      'validate_license',
     ]);
-    expect(TOOLS).toHaveLength(30);
+    expect(TOOLS).toHaveLength(40);
   });
 
   it('annotations snapshot (readOnly / destructive / idempotent hints)', () => {
@@ -94,6 +104,16 @@ describe('tool registry', () => {
       search_categories: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       get_store: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
       get_pay_widget_code: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      get_order: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      get_payouts: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      update_coupon: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      delete_coupon: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+      update_blog_post: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      delete_blog_post: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+      list_webhook_endpoints: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
+      create_webhook_endpoint: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      delete_webhook_endpoint: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+      validate_license: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
     });
   });
 
@@ -102,6 +122,36 @@ describe('tool registry', () => {
       expect(t.description.length, t.name).toBeGreaterThan(20);
       expect(t.inputSchema, t.name).toBeTypeOf('object');
     }
+  });
+});
+
+describe('0.4.0 tools', () => {
+  it('delete tools refuse without confirm and never call the API', async () => {
+    process.env.GETLY_API_KEY = 'gk_test_123';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    for (const [name, args] of [
+      ['delete_coupon', { couponId: '3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f' }],
+      ['delete_blog_post', { postId: '3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f' }],
+      ['delete_webhook_endpoint', { endpointId: '3f6f4a3e-9d1e-4c1b-8f2a-1a2b3c4d5e6f' }],
+    ] as const) {
+      const tool = TOOLS.find((t) => t.name === name)!;
+      const res = await tool.handler({ ...args });
+      expect(res.isError, name).toBe(true);
+      expect(res.content[0].text, name).toMatch(/confirm: true/);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('validate_license works without an API key and sends none', async () => {
+    delete process.env.GETLY_API_KEY;
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { valid: true } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const tool = TOOLS.find((t) => t.name === 'validate_license')!;
+    const res = await tool.handler({ key: 'GETLY-AAAA-BBBB-CCCC-DDDD' });
+    expect(res.isError ?? false).toBe(false);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 });
 

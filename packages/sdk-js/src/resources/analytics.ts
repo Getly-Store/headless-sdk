@@ -5,7 +5,7 @@ export class AnalyticsResource {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * GET /api/v1/analytics (scope read:analytics) — sales summary. Revenue
+   * GET /api/v1/analytics (scope read:analytics) - sales summary. Revenue
    * figures are your seller share in integer cents; salesByMonth covers the
    * last 6 months.
    */

@@ -1,8 +1,8 @@
-# v0 / Lovable / Bolt prompt — generate a storefront for your Getly store
+# v0 / Lovable / Bolt prompt - generate a storefront for your Getly store
 
 Paste the block below into [v0.dev](https://v0.dev), [Lovable](https://lovable.dev),
 [Bolt](https://bolt.new) or any AI app builder. Replace `YOUR_STORE_SLUG` (2 places)
-with your store slug — the part after `/store/` in your Getly storefront URL.
+with your store slug - the part after `/store/` in your Getly storefront URL.
 
 The prompt embeds the complete endpoint contract, so the generator needs no other
 docs, no SDK and no API key: the endpoint is public and CORS-enabled.
@@ -13,7 +13,7 @@ docs, no SDK and no API key: the endpoint is public and CORS-enabled.
 Build a polished storefront web page for my digital-products store, powered by the
 Getly public API. Single page, responsive, production-quality visuals.
 
-## Data source (public, no auth, CORS enabled — call it directly from the browser)
+## Data source (public, no auth, CORS enabled - call it directly from the browser)
 
 GET https://www.getly.store/api/v1/public/stores/YOUR_STORE_SLUG/products?limit=24
 
@@ -44,7 +44,7 @@ Successful response (HTTP 200):
   }
 }
 
-Error response (HTTP 4xx/5xx) — e.g. wrong store slug returns 404:
+Error response (HTTP 4xx/5xx) - e.g. wrong store slug returns 404:
 
 { "success": false, "error": "Store not found",
   "errorDetail": { "code": "not_found", "message": "Store not found", "hint": "..." } }
@@ -60,16 +60,16 @@ GET https://www.getly.store/api/v1/public/stores/YOUR_STORE_SLUG/products/{produ
    Never do arithmetic on formatted strings. Ignore any other price-looking fields.
 2. BUY: every product's buy button is a plain link to `item.urls.buy`, opened in a
    new tab with rel="noopener noreferrer". Do NOT build a cart, checkout form, or
-   payment UI — Getly's checkout handles payment (PayPal + USDT/USDC today; card checkout is paused) and file delivery.
+   payment UI - Getly's checkout handles payment (USDT/USDC today; card checkout is paused) and file delivery.
 3. SAFETY: render all API strings (names, descriptions, alt text) as TEXT. Never
    inject them with innerHTML / dangerouslySetInnerHTML.
-4. STATES: implement all four — loading (skeleton cards), error ("Couldn't load
+4. STATES: implement all four - loading (skeleton cards), error ("Couldn't load
    products" + retry button), empty ("No products yet"), and the populated grid.
-5. The response envelope is `{ success, data }` — read products from
+5. The response envelope is `{ success, data }` - read products from
    `json.data.items`, the store name from `json.data.store.name`.
 6. If `nextCursor` is non-null, show a "Load more" button that refetches with
    `&cursor=<nextCursor>` and appends the new items.
-7. The endpoint is rate-limited (60 req/min per IP) and CDN-cached ~5 minutes —
+7. The endpoint is rate-limited (60 req/min per IP) and CDN-cached ~5 minutes -
    fetch once on load, don't poll.
 
 ## Page design
@@ -89,13 +89,13 @@ GET https://www.getly.store/api/v1/public/stores/YOUR_STORE_SLUG/products/{produ
 
 ## After it generates
 
-- **Wrong slug?** A 404 means the slug doesn't match — copy it exactly from
+- **Wrong slug?** A 404 means the slug doesn't match - copy it exactly from
   `getly.store/store/<slug>`.
-- **Empty grid?** Only **published (active)** products appear. Publish drafts first —
+- **Empty grid?** Only **published (active)** products appear. Publish drafts first -
   from your dashboard or via `getly.products.publish()` /
   the `publish_product` MCP tool.
 - **Just published, not showing?** The endpoint is CDN-cached for ~5 minutes.
 - **Want coupons, chat-based selling or sale notifications?** That's the
-  authenticated API (checkout links + webhooks) — server-side only, see
+  authenticated API (checkout links + webhooks) - server-side only, see
   [`@getly/sdk`](../packages/sdk-js) and never expose an API key in generated
   client code.

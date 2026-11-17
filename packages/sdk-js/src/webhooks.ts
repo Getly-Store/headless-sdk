@@ -8,7 +8,7 @@
  * timing-safe comparison, then reject if |now - t| exceeds the tolerance
  * (300s default) to block replay of captured deliveries.
  *
- * Uses node:crypto — Node >= 18 (and every serverless Node runtime). Pure
+ * Uses node:crypto - Node >= 18 (and every serverless Node runtime). Pure
  * WebCrypto edge support is on the roadmap (WebCrypto HMAC is async, which
  * would change this function's signature).
  */
@@ -16,7 +16,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { WebhookEventName, WebhookPayloadMap } from './types.js';
 
 export interface VerifyWebhookSignatureInput {
-  /** EXACT raw request body string (await req.text() — do NOT re-serialize). */
+  /** EXACT raw request body string (await req.text() - do NOT re-serialize). */
   payload: string;
   /** The X-Getly-Signature-V2 header value. */
   header: string | null | undefined;
@@ -24,11 +24,11 @@ export interface VerifyWebhookSignatureInput {
   secret: string;
   /** Max allowed |now - t| in seconds. Default 300 (5 minutes). */
   toleranceSec?: number;
-  /** Override "now" (unix seconds) — for tests. */
+  /** Override "now" (unix seconds) - for tests. */
   now?: number;
 }
 
-/** Parse `t=...,v1=...` — returns null on any malformation. */
+/** Parse `t=...,v1=...` - returns null on any malformation. */
 export function parseSignatureHeader(header: string): { t: number; v1: string } | null {
   let t: number | null = null;
   let v1: string | null = null;
@@ -80,7 +80,7 @@ export interface GetlyWebhookEvent<T = Record<string, unknown>> {
 }
 
 /**
- * A delivery typed by its event name — narrow on `event` to get the exact
+ * A delivery typed by its event name - narrow on `event` to get the exact
  * payload shape:
  *
  *   const evt = JSON.parse(raw) as TypedGetlyWebhookEvent;

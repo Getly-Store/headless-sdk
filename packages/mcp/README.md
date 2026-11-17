@@ -1,6 +1,6 @@
 # @getly/mcp
 
-MCP server that lets Claude, Cursor, Windsurf and any other [Model Context Protocol](https://modelcontextprotocol.io) client run your [Getly](https://www.getly.store) digital-products store: create and publish products, upload files, write blog posts, mint coupons and instant checkout links, inspect licenses and sales — all from chat.
+MCP server that lets Claude, Cursor, Windsurf and any other [Model Context Protocol](https://modelcontextprotocol.io) client run your [Getly](https://www.getly.store) digital-products store: create and publish products, upload files, write blog posts, mint coupons and instant checkout links, inspect licenses and sales - all from chat.
 
 ```bash
 npx @getly/mcp init   # guided setup for Claude Code / Cursor / Claude Desktop / Windsurf
@@ -9,9 +9,9 @@ npx @getly/mcp init   # guided setup for Claude Code / Cursor / Claude Desktop /
 ## Prerequisites
 
 1. A Getly account with a store (free): https://www.getly.store/sell
-2. An API key: https://www.getly.store/dashboard/developer/keys — grant **only the scopes you need** (see [Security](#security)).
+2. An API key: https://www.getly.store/dashboard/developer/keys - grant **only the scopes you need** (see [Security](#security)).
 
-The key is read from the `GETLY_API_KEY` environment variable — the server never accepts keys as tool arguments and never prints them.
+The key is read from the `GETLY_API_KEY` environment variable - the server never accepts keys as tool arguments and never prints them.
 
 ## Install & configure
 
@@ -53,7 +53,7 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 
 > `npx @getly/mcp init` detects installed clients and offers to write these files for you (merging safely with existing config). `init --print` only prints the snippets.
 
-## Tools (30)
+## Tools (40)
 
 | Tool | What it does | Hints / gates |
 |---|---|---|
@@ -78,7 +78,7 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `get_sales_stats` | Revenue (cents), sales, per-month breakdown, recent orders | read-only |
 | `list_orders` | Sold order items with product, seller amount and the **buyer's email** | read-only; `read:orders` |
 | `list_billing_plans` | Getly Billing plans (recurring prices for your own product) | read-only; `read:billing` |
-| `create_billing_plan` | New plan: amount in cents every day/week/month/year × 1–52 | `write:billing`, approved application |
+| `create_billing_plan` | New plan from $2.00 (200 cents) every day/week/month/year × 1-52 | `write:billing`, approved application |
 | `update_billing_plan` | Rename, reprice (new subscribers only) or deactivate a plan | idempotent |
 | `create_billing_checkout` | Hosted subscribe page for one customer (24h), `customerRef` echoed on webhooks | `write:billing` |
 | `list_billing_subscriptions` | Subscriptions, filter by status / customerRef / plan | read-only |
@@ -87,14 +87,24 @@ The repo ships a root `smithery.yaml`; the hosted config asks for `getlyApiKey` 
 | `search_categories` | Fuzzy search of the public 700+ category tree | read-only, no key needed, cached 1h |
 | `get_store` | Store profile + public URL | read-only |
 | `get_pay_widget_code` | Embed snippet for a Buy button on the user's own site | read-only |
+| `get_order` | One order with your items and the buyer's email | read-only; `read:orders` |
+| `get_payouts` | Balances owed, next payout date and amount, recent payouts (cents) | read-only; `read:store` |
+| `update_coupon` | Activate/deactivate, change expiry or max uses (code and value are immutable) | idempotent |
+| `delete_coupon` | Delete a never-used coupon | **destructive, requires `confirm: true`** |
+| `update_blog_post` | Edit title, Markdown body, status, excerpt, cover, slug | idempotent |
+| `delete_blog_post` | Delete a post permanently | **destructive, requires `confirm: true`** |
+| `list_webhook_endpoints` | Your webhook URLs and events (secret never shown) | read-only; `webhooks:manage` |
+| `create_webhook_endpoint` | Register an https URL for signed events; the secret is shown once | `webhooks:manage` |
+| `delete_webhook_endpoint` | Stop a URL receiving events | **destructive, requires `confirm: true`** |
+| `validate_license` | Check a customer's license key (valid, seats left, expiry) | read-only, no key needed |
 
-**Timed access.** `create_product` and `update_product` accept `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents / label / isActive) to sell access for a period on a one-time payment — no recurring billing. On update the array replaces the table: rows with an `id` are updated, rows left out are retired. The store's webhook endpoint receives `access.expiring` (7 days before the end) and `access.expired`.
+**Timed access.** `create_product` and `update_product` accept `accessMode: "timed"` and `accessTerms` (durationDays, priceCents, optional compareAtPriceCents / label / isActive) to sell access for a period on a one-time payment - no recurring billing. On update the array replaces the table: rows with an `id` are updated, rows left out are retired. The store's webhook endpoint receives `access.expiring` (7 days before the end) and `access.expired`.
 
 **Your own license keys.** Set `keyPoolEnabled: true` on the product and add keys with `add_product_keys`: each sale hands the buyer the next unsold key, and the `sale.completed` webhook carries it as `items[].licenseKey`. Waiting buyers (pool empty) get their key the moment more are added. Mutually exclusive with `licenseKeysEnabled` (Getly-generated keys).
 
-**Getly Billing.** The billing tools sell recurring access to the user's *own* product (a SaaS, community or tool on their site) — not a catalogue listing. Writes need an approved Billing application (`billing_not_approved` until the user applies at `/dashboard/billing`). Subscribers pay with PayPal or USDT/USDC today (one payment buys one period) or by card when that rail is live.
+**Getly Billing.** The billing tools sell recurring access to the user's *own* product (a SaaS, community or tool on their site) - not a catalogue listing. Writes need an approved Billing application (`billing_not_approved` until the user applies at `/dashboard/billing`). Subscribers pay with USDT/USDC today (one payment buys one period), or by card once that rail is back (expected at the end of October).
 
-**Payments today.** Buyers pay with PayPal or USDT/USDC; card checkout is paused. Seller payouts are USDT/USDC on BNB Smart Chain (min $5) or USDT on Tron (min $15), on the 1st and 15th.
+**Payments today.** Buyers pay by card or with USDT/USDC. Seller payouts are USDT/USDC on BNB Smart Chain (min $5), on the 1st and 15th.
 
 There is intentionally **no bulk-delete tool**, and the model is instructed to get explicit human approval before any confirm-gated call.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * generate-llms-txt.mjs — renders llms.txt (repo root) from
+ * generate-llms-txt.mjs - renders llms.txt (repo root) from
  * openapi/getly-v1.yaml. Zero dependencies: parses the YAML with a small
  * subset parser matched to the spec's formatting contract (2-space indent,
  * block scalars via | / |-, no flow collections except the empty [] / {},
@@ -86,7 +86,7 @@ function parseYaml(text) {
     return strip ? joined : joined + '\n';
   }
 
-  /** Split "key: rest" / "key:" — keys never contain ": " in this spec. */
+  /** Split "key: rest" / "key:" - keys never contain ": " in this spec. */
   function splitKey(content) {
     const idx = content.indexOf(': ');
     let key;
@@ -161,7 +161,7 @@ function parseYaml(text) {
         pos++;
         arr.push(parseNode(indent + 1));
       } else if (MAP_START_RE.test(rest)) {
-        // "- key: value" — inline map start; re-park the line as an indented
+        // "- key: value" - inline map start; re-park the line as an indented
         // map entry and let parseMap consume it plus its continuation lines.
         lines[pos] = ' '.repeat(indent + 2) + rest;
         arr.push(parseMap(indent + 2));
@@ -223,7 +223,7 @@ function render(spec) {
   push(`> ${info.summary ?? ''}`);
   push('');
   push(
-    'Generated from `openapi/getly-v1.yaml` (github.com/Getly-Store/headless-sdk) — do not edit by hand; run `node scripts/generate-llms-txt.mjs`.',
+    'Generated from `openapi/getly-v1.yaml` (github.com/Getly-Store/headless-sdk) - do not edit by hand; run `node scripts/generate-llms-txt.mjs`.',
   );
   push('');
   push(`Base URL: ${server}`);
@@ -269,7 +269,7 @@ function render(spec) {
   );
   push('');
   for (const [code, hint] of Object.entries(errorCodes)) {
-    push(`- \`${code}\` — ${hint}`);
+    push(`- \`${code}\` - ${hint}`);
   }
   push('');
 
@@ -286,7 +286,7 @@ function render(spec) {
     }
   }
 
-  // API areas — the tag descriptions carry the product-level rules (e.g. what
+  // API areas - the tag descriptions carry the product-level rules (e.g. what
   // Getly Billing is and who may write to it) that no single endpoint repeats.
   const tags = Array.isArray(spec.tags) ? spec.tags : [];
   if (tags.length > 0) {
@@ -295,7 +295,7 @@ function render(spec) {
     for (const tag of tags) {
       if (!tag?.name) continue;
       const desc = String(tag.description ?? '').trim().replace(/\s*\n\s*/g, ' ');
-      push(desc ? `- **${tag.name}** — ${desc}` : `- **${tag.name}**`);
+      push(desc ? `- **${tag.name}** - ${desc}` : `- **${tag.name}**`);
     }
     push('');
   }
@@ -309,9 +309,9 @@ function render(spec) {
       const op = pathItem?.[method];
       if (!op) continue;
 
-      push(`### ${method.toUpperCase()} ${pathKey} — ${op.summary ?? ''}`);
+      push(`### ${method.toUpperCase()} ${pathKey} - ${op.summary ?? ''}`);
       push('');
-      const scope = op['x-public'] ? 'Public (no auth required)' : `scope \`${op['x-scope'] ?? '—'}\``;
+      const scope = op['x-public'] ? 'Public (no auth required)' : `scope \`${op['x-scope'] ?? '-'}\``;
       push(`operationId: \`${op.operationId}\` · ${scope}`);
       push('');
       if (op.description) {
@@ -327,7 +327,7 @@ function render(spec) {
         push('Parameters:');
         for (const p of params) {
           const req = p.required ? ', required' : '';
-          push(`- \`${p.name}\` (${p.in}${req}) — ${p.description ?? ''}`);
+          push(`- \`${p.name}\` (${p.in}${req}) - ${p.description ?? ''}`);
         }
         push('');
       }
@@ -383,13 +383,13 @@ function render(spec) {
 function main() {
   const spec = parseYaml(readFileSync(SPEC_PATH, 'utf8'));
 
-  // Sanity gates — a parser regression must fail loudly, not emit a stub.
+  // Sanity gates - a parser regression must fail loudly, not emit a stub.
   if (!spec || typeof spec !== 'object') throw new Error('spec did not parse to an object');
   if (!String(spec.openapi ?? '').startsWith('3.1')) {
     throw new Error(`expected openapi 3.1.x, got: ${spec.openapi}`);
   }
   const pathCount = Object.keys(spec.paths ?? {}).length;
-  if (pathCount < 25) throw new Error(`suspiciously few paths parsed (${pathCount}) — parser regression?`);
+  if (pathCount < 25) throw new Error(`suspiciously few paths parsed (${pathCount}) - parser regression?`);
   const opIds = [];
   for (const item of Object.values(spec.paths)) {
     for (const m of HTTP_METHODS) if (item?.[m]?.operationId) opIds.push(item[m].operationId);
@@ -406,11 +406,11 @@ function main() {
     try {
       committed = readFileSync(OUT_PATH, 'utf8');
     } catch {
-      console.error('llms.txt is missing — run: node scripts/generate-llms-txt.mjs');
+      console.error('llms.txt is missing - run: node scripts/generate-llms-txt.mjs');
       process.exit(1);
     }
     if (committed !== rendered) {
-      console.error('llms.txt is out of date with openapi/getly-v1.yaml — run: node scripts/generate-llms-txt.mjs');
+      console.error('llms.txt is out of date with openapi/getly-v1.yaml - run: node scripts/generate-llms-txt.mjs');
       process.exit(1);
     }
     console.log(`llms.txt is up to date (${pathCount} paths, ${opIds.length} operations).`);

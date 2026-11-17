@@ -1,5 +1,5 @@
 /**
- * @getly/sdk — zero-dependency TypeScript client for the Getly v1 API.
+ * @getly/sdk - zero-dependency TypeScript client for the Getly v1 API.
  *
  *   import { Getly } from '@getly/sdk';
  *   const getly = new Getly(); // reads GETLY_API_KEY from the environment
@@ -45,11 +45,11 @@ export class Getly {
   readonly orders: OrdersResource;
   /** Sales analytics (scope read:analytics). */
   readonly analytics: AnalyticsResource;
-  /** Getly Billing — recurring plans for your OWN product (read:billing / write:billing). */
+  /** Getly Billing - recurring plans for your OWN product (read:billing / write:billing). */
   readonly billing: BillingResource;
-  /** Public storefront endpoints — usable WITHOUT an API key. */
+  /** Public storefront endpoints - usable WITHOUT an API key. */
   readonly publicStore: PublicStoreResource;
-  /** Pay Widget public checkout — usable WITHOUT an API key. */
+  /** Pay Widget public checkout - usable WITHOUT an API key. */
   readonly publicCheckout: PublicCheckoutResource;
 
   private readonly http: HttpClient;
